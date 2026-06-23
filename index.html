@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🎯 랜덤 추첨 룰렛</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <h1>🎯 랜덤 추첨 룰렛</h1>
+    <p class="subtitle">시작 버튼을 <b>꾹 누르고 있으면</b> 룰렛이 돌아갑니다.<br />버튼을 떼면 멈춰요!</p>
+
+    <div class="wheel-wrap">
+      <div class="pointer">▼</div>
+      <canvas id="wheel" width="420" height="420"></canvas>
+    </div>
+
+    <button id="spinBtn" class="spin-btn">꾹 눌러서 돌리기</button>
+
+    <div id="result" class="result"></div>
+
+    <details class="settings">
+      <summary>⚙️ 참가자 설정</summary>
+      <textarea id="namesInput" rows="6" placeholder="한 줄에 한 명씩 입력하세요"></textarea>
+      <button id="applyBtn" class="apply-btn">적용하기</button>
+    </details>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
