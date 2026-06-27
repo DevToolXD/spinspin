@@ -412,101 +412,49 @@ local upg = { mult = 1, speed = 1, hint = false }
 local function isUnlocked(t) return totalEarned >= (t.unlockAt or 0) end
 
 local TARGETS = {
-	{ id="freerobux", name="FreeRobux Generator", url="free-robux-generator.com",
-		reward=200, unlockAt=0, enc="none", secret="sk_live_8842XQ",
-		desc="무료 로벅스 생성기 (관리자 패널 잠김)", hint="HTML 주석을 확인하세요 — Elements 탭",
-		dev={ Elements={ "<!DOCTYPE html>","<html>","  <body>","    <h1>FREE ROBUX</h1>",
-			{ text="    <!-- DEPLOY_KEY = sk_live_8842XQ (배포 전 삭제!) -->", token="sk_live_8842XQ" },
-			"    <button>GENERATE</button>","  </body>","</html>" },
-			Network={ "GET  /          200  8ms",{ text="GET  /api/ping  200  {tmp:'tmp_0000'}", token="tmp_0000" } },
-			Console={ "app.js:1 loaded","app.js:88 warn: fake generator" } } },
-
-	{ id="databank", name="DataBank Online", url="secure.databank-online.com",
-		reward=350, unlockAt=0, enc="none", secret="BANKTOKEN-7741",
-		desc="온라인 뱅킹 로그인 (보안 1등급)", hint="로그인 요청의 응답을 보세요 — Network 탭",
-		dev={ Elements={ "<html>","  <body>","    <h2>DataBank 로그인</h2>",
-			{ text="    <input name='demo' value='BANK-DEMO-0001'>", token="BANK-DEMO-0001" },
-			"    <input type='password'>","  </body>","</html>" },
-			Network={ "GET   /login     200  10ms","GET   /vendor.js 200  60ms",
-			{ text="POST  /api/auth  200  {session_token:'BANKTOKEN-7741'}", token="BANKTOKEN-7741" },
-			"GET   /api/balance 401 3ms" },
-			Console={ "vendor.js:12 init ok","auth.js:5 do NOT log tokens" } } },
-
-	{ id="school", name="School Portal", url="portal.school-net.edu",
-		reward=600, unlockAt=600, enc="none", secret="md5:9af3c12e",
-		desc="학교 성적 포털 (교직원 인증 필요)", hint="콘솔 로그를 보세요 — Console 탭",
-		dev={ Elements={ "<html><body>","  <h1>School Portal</h1>","  <p>로그인 후 성적 확인</p>","</body></html>" },
-			Network={ "GET  /portal    200  9ms",{ text="GET  /api/me     200  {role:'guest', t:'sess_guest'}", token="sess_guest" } },
-			Console={ "core.js:3 portal ready",
-			{ text="auth.js:40 [DEBUG] staff hash => md5:9af3c12e", token="md5:9af3c12e" },
-			"core.js:9 TODO: disable debug logging" } } },
-
-	{ id="cryptomine", name="CryptoMine Pool", url="pool.cryptomine.io",
-		reward=850, unlockAt=900, enc="rot13", plain="MINEKEY-5521",
-		desc="암호화폐 채굴 풀 (지갑 인증 필요)", hint="지갑 응답을 보세요 — Network 탭",
-		inject={ tab="Network", text="GET  /api/wallet 200  {k:'%s'}" },
-		dev={ Elements={ "<html><body>","  <h1>CryptoMine</h1>","</body></html>" },
-			Network={ "GET  /            200  7ms","GET  /miner.js    200  33ms" },
-			Console={ "miner.js:2 hashing...",{ text="miner.js:9 debug seed=zvar_qrpbl", token="zvar_qrpbl" } } } },
-
-	{ id="gamevault", name="GameVault Store", url="store.gamevault.gg",
-		reward=1000, unlockAt=900, enc="reverse", plain="VAULT_PASS_77",
-		desc="게임 아이템 상점 (백오피스 잠김)", hint="HTML 주석을 보세요 — Elements 탭",
-		inject={ tab="Elements", text="    <!-- backup pass: %s -->" },
-		dev={ Elements={ "<html>","  <body>","    <h1>GameVault</h1>","    <div class='shop'></div>","  </body>","</html>" },
-			Network={ "GET  /          200  9ms",{ text="GET  /api/promo 200  {code:'SALE2024'}", token="SALE2024" } },
-			Console={ "shop.js:1 ready" } } },
-
-	{ id="citypower", name="City Power Grid", url="scada.citypower.gov",
-		reward=1500, unlockAt=3000, enc="rot13", plain="GRID-ADMIN-9",
-		desc="도시 전력망 제어 시스템 (SCADA)", hint="콘솔 경고를 보세요 — Console 탭",
-		inject={ tab="Console", text="scada.js:12 [WARN] default cred %s" },
-		dev={ Elements={ "<html><body>","  <h1>POWER GRID CONTROL</h1>","</body></html>" },
-			Network={ "GET  /status   200  5ms",{ text="GET  /nodes    200  {id:'node_decoy'}", token="node_decoy" } },
-			Console={ "scada.js:1 boot","scada.js:7 nodes online" } } },
-
-	{ id="megacorp", name="MegaCorp SSO", url="sso.megacorp.com",
-		reward=2000, unlockAt=3000, enc="reverse", plain="CORP-ROOT-X1",
-		desc="대기업 통합 로그인 (SSO)", hint="SSO 응답을 보세요 — Network 탭",
-		inject={ tab="Network", text="POST /sso/auth 200  {root:'%s'}" },
-		dev={ Elements={ "<html><body>","  <h2>MegaCorp 로그인</h2>","</body></html>" },
-			Network={ "GET  /sso       200  11ms","GET  /idp.js    200  40ms" },
-			Console={ "idp.js:3 ready",{ text="idp.js:8 tmp token TMP-DECOY-0", token="TMP-DECOY-0" } } } },
-
-	{ id="darkmarket", name="Dark Market", url="darkmkt.onion",
-		reward=2500, unlockAt=3000, enc="none", secret="btc:1A2b3C4d",
-		desc="다크웹 장터 (관리자 지갑 잠김)", hint="콘솔 로그를 보세요 — Console 탭",
-		dev={ Elements={ "<html><body>","  <h1>::DARK MARKET::</h1>","</body></html>" },
-			Network={ "GET  /          200  90ms",{ text="GET  /vendor   200  {v:'vendor_99'}", token="vendor_99" } },
-			Console={ "tor.js:1 connected",
-			{ text="admin.js:3 wallet leak btc:1A2b3C4d", token="btc:1A2b3C4d" } } } },
-
-	{ id="satellite", name="Orbital Uplink", url="uplink.orbital-sat.net",
-		reward=3500, unlockAt=8000, enc="rot13", plain="SAT-LINK-4420",
-		desc="위성 통신 업링크 (군사 등급)", hint="meta 태그를 보세요 — Elements 탭",
-		inject={ tab="Elements", text="    <meta name='key' content='%s'>" },
-		dev={ Elements={ "<html>","  <head>","  </head>","  <body><h1>ORBITAL UPLINK</h1></body>","</html>" },
-			Network={ "GET  /uplink   200  120ms",{ text="GET  /telemetry 200  {t:'tlm_decoy'}", token="tlm_decoy" } },
-			Console={ "sat.js:1 link up" } } },
-
-	{ id="mainframe", name="Gov Mainframe", url="mainframe.classified.gov",
-		reward=6000, unlockAt=8000, enc="reverse", plain="ROOT@MAINFRAME9",
-		desc="정부 메인프레임 (1급 기밀)", hint="기밀 응답을 보세요 — Network 탭",
-		inject={ tab="Network", text="GET  /classified 200  {auth:'%s'}" },
-		dev={ Elements={ "<html><body>","  <h1>CLASSIFIED SYSTEM</h1>","  <p>ACCESS RESTRICTED</p>","</body></html>" },
-			Network={ "GET  /          403  2ms","GET  /core.js   200  55ms" },
-			Console={ "core.js:1 secure boot",{ text="core.js:4 honeypot key FAKE-TRAP-1", token="FAKE-TRAP-1" } } } },
+	{ id="freerobux", name="FreeRobux Generator", url="free-robux-generator.com", kind="generator",
+	  reward=200, unlockAt=0, enc="none", secret="sk_live_8842XQ", tokenWhere="elements",
+	  desc="무료 로벅스 생성기 — 관리자 패널 잠김" },
+	{ id="databank", name="DataBank Online", url="secure.databank-online.com", kind="bank",
+	  reward=350, unlockAt=0, enc="none", secret="BANKTOKEN-7741", tokenWhere="network",
+	  desc="온라인 뱅킹 — 보안 1등급" },
+	{ id="school", name="School Portal", url="portal.school-net.edu", kind="portal",
+	  reward=600, unlockAt=600, enc="none", secret="md5:9af3c12e", tokenWhere="console",
+	  desc="학교 성적 포털 — 교직원 인증 필요" },
+	{ id="cryptomine", name="CryptoMine Pool", url="pool.cryptomine.io", kind="crypto",
+	  reward=850, unlockAt=900, enc="rot13", plain="MINEKEY-5521", tokenWhere="network",
+	  desc="암호화폐 채굴 풀 — 지갑 인증 필요" },
+	{ id="gamevault", name="GameVault Store", url="store.gamevault.gg", kind="store",
+	  reward=1000, unlockAt=900, enc="reverse", plain="VAULT_PASS_77", tokenWhere="elements",
+	  desc="게임 아이템 상점 — 백오피스 잠김" },
+	{ id="citypower", name="City Power Grid", url="scada.citypower.gov", kind="scada",
+	  reward=1500, unlockAt=3000, enc="rot13", plain="GRID-ADMIN-9", tokenWhere="console",
+	  desc="도시 전력망 제어 — SCADA" },
+	{ id="megacorp", name="MegaCorp SSO", url="sso.megacorp.com", kind="corp",
+	  reward=2000, unlockAt=3000, enc="reverse", plain="CORP-ROOT-X1", tokenWhere="cookies",
+	  desc="대기업 통합 로그인 — SSO" },
+	{ id="darkmarket", name="Dark Market", url="darkmkt.onion", kind="market",
+	  reward=2500, unlockAt=3000, enc="none", secret="btc:1A2b3C4d", tokenWhere="console",
+	  desc="다크웹 장터 — 관리자 지갑 잠김" },
+	{ id="satellite", name="Orbital Uplink", url="uplink.orbital-sat.net", kind="sat",
+	  reward=3500, unlockAt=8000, enc="rot13", plain="SAT-LINK-4420", tokenWhere="elements",
+	  desc="위성 통신 업링크 — 군사 등급" },
+	{ id="mainframe", name="Gov Mainframe", url="mainframe.classified.gov", kind="gov",
+	  reward=6000, unlockAt=8000, enc="reverse", plain="ROOT@MAINFRAME9", tokenWhere="network",
+	  desc="정부 메인프레임 — 1급 기밀" },
 }
 
--- build encrypted token lines from plaintext (token shown = encoded form)
+local WHERE_KOR = { elements="Elements 탭의 HTML", network="Network 탭의 요청 응답", console="Console 탭 로그", cookies="Application 탭의 Cookies" }
 for _, t in ipairs(TARGETS) do
-	if t.enc and t.enc ~= "none" and t.plain and t.inject then
-		local encTok = applyDecode(t.enc, t.plain)
+	if t.enc and t.enc ~= "none" and t.plain then
 		t.secret = t.plain
-		t.dev[t.inject.tab] = t.dev[t.inject.tab] or {}
-		table.insert(t.dev[t.inject.tab], { text = string.format(t.inject.text, encTok), token = encTok })
+		t.tokenValue = applyDecode(t.enc, t.plain)
+	else
+		t.tokenValue = t.secret
 	end
+	t.hint = WHERE_KOR[t.tokenWhere] .. "에서 토큰을 찾으세요" .. ((t.enc and t.enc ~= "none") and ("  (🔐 " .. (t.enc == "rot13" and "ROT13" or "역순") .. " → Decoder로 해독)") or "")
 end
+
 
 ----------------------------------------------------------------------
 -- Interactive tutorial (guides the player while they play)
@@ -761,91 +709,333 @@ openBrowser = function()
 
 	local showHome, showResults, showSite
 
+	-- ===== realistic Chrome-style DevTools =====
+	local DT_BG   = Color3.fromRGB(33, 33, 36)
+	local DT_BAR  = Color3.fromRGB(45, 45, 50)
+	local DT_TXT  = Color3.fromRGB(206, 206, 210)
+	local DT_MUT  = Color3.fromRGB(150, 150, 158)
+	local DT_ACC  = Color3.fromRGB(102, 170, 247)
+	local DT_LINE = Color3.fromRGB(60, 60, 66)
+
+	local function esc(str) return (str:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
+	local function fnt(c, str) return '<font color="' .. c .. '">' .. str .. '</font>' end
+	local function colorTag(tag)
+		if tag:sub(1, 4) == "<!--" then return fnt("#6a9955", esc(tag)) end
+		local inner = tag:sub(2, #tag - 1)
+		local closing = ""
+		if inner:sub(1, 1) == "/" then closing = "/" inner = inner:sub(2) end
+		local selfc = ""
+		if inner:sub(-1) == "/" then selfc = "/" inner = inner:sub(1, #inner - 1) end
+		local name, rest = inner:match("^([%w%-!]+)%s*(.*)$")
+		name = name or inner
+		local out = fnt("#808080", "&lt;" .. closing) .. fnt("#569cd6", esc(name))
+		if rest and #rest > 0 then
+			rest = esc(rest)
+			rest = rest:gsub('([%w%-:]+)(%s*=%s*)("[^"]*")', function(an, eq, va)
+				return fnt("#9cdcfe", an) .. fnt("#808080", eq) .. fnt("#ce9178", va)
+			end)
+			out = out .. " " .. rest
+		end
+		return out .. fnt("#808080", selfc .. "&gt;")
+	end
+	local function htmlRich(line)
+		local out, i, L = {}, 1, #line
+		while i <= L do
+			local lt = line:find("<", i)
+			if not lt then out[#out + 1] = fnt("#d4d4d4", esc(line:sub(i))) break end
+			if lt > i then out[#out + 1] = fnt("#d4d4d4", esc(line:sub(i, lt - 1))) end
+			local gt = line:find(">", lt)
+			if not gt then out[#out + 1] = fnt("#d4d4d4", esc(line:sub(lt))) break end
+			out[#out + 1] = colorTag(line:sub(lt, gt))
+			i = gt + 1
+		end
+		return table.concat(out)
+	end
+
+	local function elementsFor(t)
+		local L = {
+			{ h = "<!DOCTYPE html>" },
+			{ h = '<html lang="en">' },
+			{ h = "<head>" },
+			{ h = '  <meta charset="utf-8">' },
+			{ h = "  <title>" .. t.name .. "</title>" },
+			{ h = '  <link rel="stylesheet" href="/assets/app.css">' },
+			{ h = '  <script src="/assets/app.js" defer></script>' },
+		}
+		if t.tokenWhere == "elements" then
+			L[#L + 1] = { h = '  <meta name="x-internal-key" content="' .. t.tokenValue .. '">', token = t.tokenValue }
+		end
+		L[#L + 1] = { h = "</head>" }
+		L[#L + 1] = { h = '<body class="app">' }
+		L[#L + 1] = { h = '  <header class="brand">' .. t.name .. "</header>" }
+		L[#L + 1] = { h = '  <main id="root">' }
+		L[#L + 1] = { h = '    <form action="/api/login" method="post">' }
+		L[#L + 1] = { h = '      <input name="user" placeholder="ID">' }
+		L[#L + 1] = { h = '      <input name="pass" type="password">' }
+		L[#L + 1] = { h = '      <button type="submit">Sign in</button>' }
+		L[#L + 1] = { h = "    </form>" }
+		L[#L + 1] = { h = '    <div id="admin-panel" hidden></div>' }
+		L[#L + 1] = { h = "  </main>" }
+		L[#L + 1] = { h = "</body>" }
+		L[#L + 1] = { h = "</html>" }
+		return L
+	end
+	local function networkFor(t)
+		local R = {
+			{ name = "/", method = "GET", status = 200, type = "document", size = "3.2 kB", time = "118 ms",
+			  resp = { "HTTP/1.1 200 OK", "content-type: text/html; charset=utf-8", "cache-control: no-cache", "", "<!doctype html><html> ... </html>" } },
+			{ name = "app.css", method = "GET", status = 200, type = "stylesheet", size = "12.4 kB", time = "14 ms",
+			  resp = { "HTTP/1.1 200 OK", "content-type: text/css", "", "/* compiled styles */" } },
+			{ name = "app.js", method = "GET", status = 200, type = "script", size = "88.1 kB", time = "42 ms",
+			  resp = { "HTTP/1.1 200 OK", "content-type: application/javascript", "", "// webpack bundle (minified)" } },
+		}
+		if t.tokenWhere == "network" then
+			R[#R + 1] = { name = "login", method = "POST", status = 200, type = "xhr", size = "0.5 kB", time = "96 ms",
+				resp = { "HTTP/1.1 200 OK", "content-type: application/json", "set-cookie: sid=" .. math.random(100000, 999999), "",
+					"{", '  "ok": true,', '  "role": "guest",', '  "token": "' .. t.tokenValue .. '"', "}" },
+				tokenLine = 8, token = t.tokenValue }
+			R[#R + 1] = { name = "me", method = "GET", status = 403, type = "xhr", size = "0.1 kB", time = "7 ms",
+				resp = { "HTTP/1.1 403 Forbidden", "content-type: application/json", "", '{ "error": "admin only" }' } }
+		else
+			R[#R + 1] = { name = "ping", method = "GET", status = 200, type = "xhr", size = "0.1 kB", time = "6 ms",
+				resp = { "HTTP/1.1 200 OK", "content-type: application/json", "", '{ "tmp": "tmp_' .. math.random(1000, 9999) .. '" }' } }
+		end
+		return R
+	end
+	local function consoleFor(t)
+		local K = {
+			{ lvl = "info",  txt = t.name .. " initialized" },
+			{ lvl = "log",   txt = "[router] rendered '/' in 38ms" },
+			{ lvl = "warn",  txt = "[deprecation] /api/v1 is deprecated; use /api/v2" },
+		}
+		if t.tokenWhere == "console" then
+			K[#K + 1] = { lvl = "debug", txt = "[auth] DEBUG token=" .. t.tokenValue .. " (remove before prod)", token = t.tokenValue }
+		end
+		K[#K + 1] = { lvl = "error", txt = "GET /api/admin 403 (Forbidden)" }
+		return K
+	end
+	local function cookiesFor(t)
+		local K = {
+			{ name = "_ga", value = "GA1.2." .. math.random(10000000, 99999999), domain = t.url },
+			{ name = "theme", value = "dark", domain = t.url },
+		}
+		if t.tokenWhere == "cookies" then
+			K[#K + 1] = { name = "admin_session", value = t.tokenValue, domain = t.url, token = t.tokenValue }
+		else
+			K[#K + 1] = { name = "sid", value = "s_" .. math.random(100000, 999999), domain = t.url }
+		end
+		return K
+	end
+
 	local function buildDev()
 		if devPanel then devPanel:Destroy() end
 		devPanel = Instance.new("Frame")
 		devPanel.AnchorPoint = Vector2.new(0, 1)
 		devPanel.Position = UDim2.fromScale(0, 1)
-		devPanel.Size = UDim2.new(1, 0, 0.5, 0)
-		devPanel.BackgroundColor3 = C.dark
+		devPanel.Size = UDim2.new(1, 0, 0.56, 0)
+		devPanel.BackgroundColor3 = DT_BG
 		devPanel.BorderSizePixel = 0
-		devPanel.ZIndex = 20 devPanel.Parent = page
+		devPanel.ZIndex = 20
+		devPanel.Parent = page
+		stroke(devPanel, DT_LINE, 1)
 
-		local tabbar = Instance.new("Frame")
-		tabbar.Size = UDim2.new(1, 0, 0, 32)
-		tabbar.BackgroundColor3 = C.darkPan
-		tabbar.BorderSizePixel = 0 tabbar.ZIndex = 21 tabbar.Parent = devPanel
+		local bar = Instance.new("Frame")
+		bar.Size = UDim2.new(1, 0, 0, 30) bar.BackgroundColor3 = DT_BAR bar.BorderSizePixel = 0
+		bar.ZIndex = 21 bar.Parent = devPanel
+		local body = Instance.new("Frame")
+		body.Position = UDim2.fromOffset(0, 30) body.Size = UDim2.new(1, 0, 1, -30)
+		body.BackgroundColor3 = DT_BG body.BorderSizePixel = 0 body.ClipsDescendants = true
+		body.ZIndex = 21 body.Parent = devPanel
 
-		local body = makeScroller(devPanel)
-		body.Position = UDim2.fromOffset(0, 32)
-		body.Size = UDim2.new(1, 0, 1, -56)
-		body.ZIndex = 21
-		local blay = Instance.new("UIListLayout") blay.Padding = UDim.new(0, 3) blay.Parent = body
-		pad(body, 14, 10, 10, 10)
+		local closeB = Instance.new("TextButton")
+		closeB.AnchorPoint = Vector2.new(1, 0.5) closeB.Position = UDim2.new(1, -8, 0.5, 0)
+		closeB.Size = UDim2.fromOffset(22, 22) closeB.BackgroundTransparency = 1 closeB.Text = "✕"
+		closeB.Font = Enum.Font.GothamBold closeB.TextSize = 13 closeB.TextColor3 = DT_MUT
+		closeB.ZIndex = 22 closeB.Parent = bar
+		closeB.MouseButton1Click:Connect(function() destroyDev() end)
 
-		local foot = Instance.new("TextLabel")
-		foot.AnchorPoint = Vector2.new(0, 1) foot.Position = UDim2.fromScale(0, 1)
-		foot.Size = UDim2.new(1, 0, 0, 24) foot.BackgroundColor3 = C.darkPan
-		foot.Font = Enum.Font.Code foot.Text = "  💡 초록색 토큰을 클릭 = 복사 → HackTool에 붙여넣기"
-		foot.TextColor3 = Color3.fromRGB(170, 180, 195) foot.TextSize = 12
-		foot.TextXAlignment = Enum.TextXAlignment.Left foot.ZIndex = 21 foot.Parent = devPanel
+		local function newScroll(parent)
+			local sc = makeScroller(parent) sc.Size = UDim2.fromScale(1, 1) sc.ZIndex = 21 return sc
+		end
 
-		local function renderBody()
-			clearKids(body)
-			if not currentSite then
-				local l = Instance.new("TextLabel")
-				l.BackgroundTransparency = 1 l.Size = UDim2.new(1, 0, 0, 20)
-				l.Font = Enum.Font.Code l.Text = "// 먼저 해킹 대상 사이트에 접속하세요."
-				l.TextColor3 = C.muted l.TextXAlignment = Enum.TextXAlignment.Left
-				l.ZIndex = 21 l.Parent = body
-				return
-			end
-			for i, line in ipairs(currentSite.dev[devTab] or {}) do
-				local txt = type(line) == "table" and line.text or line
-				local token = type(line) == "table" and line.token or nil
-				if token then
-					local b = Instance.new("TextButton")
-					b.Size = UDim2.new(1, 0, 0, 22)
-					b.BackgroundColor3 = Color3.fromRGB(34, 52, 38)
-					b.Font = Enum.Font.Code b.Text = txt
-					b.TextColor3 = C.termGrn b.TextSize = 13
-					b.TextXAlignment = Enum.TextXAlignment.Left
-					b.AutomaticSize = Enum.AutomaticSize.Y
-					b.TextWrapped = true
-					b.LayoutOrder = i b.ZIndex = 21 b.Parent = body
-					corner(b, 5) pad(b, 8, 8, 3, 3)
-					b.MouseButton1Click:Connect(function() copyToClipboard(token) end)
-				else
-					local l = Instance.new("TextLabel")
-					l.BackgroundTransparency = 1 l.Size = UDim2.new(1, 0, 0, 20)
-					l.AutomaticSize = Enum.AutomaticSize.Y l.TextWrapped = true
-					l.Font = Enum.Font.Code l.Text = txt
-					l.TextColor3 = C.darkText l.TextSize = 13
-					l.TextXAlignment = Enum.TextXAlignment.Left
-					l.LayoutOrder = i l.ZIndex = 21 l.Parent = body
-				end
+		local function renderElements(holder)
+			local sc = newScroll(holder)
+			local lay = Instance.new("UIListLayout") lay.Parent = sc
+			pad(sc, 12, 8, 8, 8)
+			for i, node in ipairs(elementsFor(currentSite)) do
+				local b = Instance.new("TextButton")
+				b.Size = UDim2.new(1, 0, 0, 17) b.BackgroundColor3 = Color3.fromRGB(70, 90, 120)
+				b.BackgroundTransparency = 1 b.AutoButtonColor = false
+				b.RichText = true b.Font = Enum.Font.Code b.Text = htmlRich(node.h)
+				b.TextSize = 13 b.TextXAlignment = Enum.TextXAlignment.Left b.TextColor3 = DT_TXT
+				b.LayoutOrder = i b.ZIndex = 21 b.Parent = sc
+				b.MouseEnter:Connect(function() b.BackgroundTransparency = 0.8 end)
+				b.MouseLeave:Connect(function() b.BackgroundTransparency = 1 end)
+				if node.token then b.MouseButton1Click:Connect(function() copyToClipboard(node.token) end) end
 			end
 		end
 
-		local tabBtns = {}
+		local function renderConsole(holder)
+			local sc = newScroll(holder)
+			local lay = Instance.new("UIListLayout") lay.Padding = UDim.new(0, 1) lay.Parent = sc
+			pad(sc, 0, 0, 4, 4)
+			for i, ln in ipairs(consoleFor(currentSite)) do
+				local err = ln.lvl == "error"
+				local warn = ln.lvl == "warn"
+				local b = Instance.new("TextButton")
+				b.Size = UDim2.new(1, 0, 0, 22) b.AutoButtonColor = false b.BorderSizePixel = 0
+				b.BackgroundColor3 = err and Color3.fromRGB(48, 28, 28) or warn and Color3.fromRGB(46, 41, 26) or DT_BG
+				b.BackgroundTransparency = (err or warn) and 0 or 1
+				b.Font = Enum.Font.Code b.TextSize = 13 b.TextXAlignment = Enum.TextXAlignment.Left
+				b.TextColor3 = err and Color3.fromRGB(244, 135, 113) or warn and Color3.fromRGB(226, 192, 141)
+					or ln.lvl == "info" and Color3.fromRGB(156, 220, 254) or ln.lvl == "debug" and Color3.fromRGB(181, 206, 168) or DT_TXT
+				b.Text = "  " .. (err and "✖ " or warn and "⚠ " or "› ") .. ln.txt
+				b.LayoutOrder = i b.ZIndex = 21 b.Parent = sc
+				if ln.token then b.MouseButton1Click:Connect(function() copyToClipboard(ln.token) end) end
+			end
+		end
+
+		local renderNetwork
+		local function netDetail(holder, row)
+			clearKids(holder)
+			local back = Instance.new("TextButton")
+			back.Position = UDim2.fromOffset(8, 6) back.Size = UDim2.fromOffset(70, 22)
+			back.BackgroundColor3 = DT_BAR back.Font = Enum.Font.Code back.Text = "← 뒤로"
+			back.TextColor3 = DT_TXT back.TextSize = 12 back.ZIndex = 22 back.Parent = holder corner(back, 6)
+			back.MouseButton1Click:Connect(function() renderNetwork(holder) end)
+			local title = Instance.new("TextLabel")
+			title.Position = UDim2.fromOffset(86, 6) title.Size = UDim2.new(1, -96, 0, 22)
+			title.BackgroundTransparency = 1 title.Font = Enum.Font.Code
+			title.Text = row.method .. "  " .. row.name .. "   ·   " .. row.status
+			title.TextColor3 = (row.status >= 400) and Color3.fromRGB(244, 135, 113) or Color3.fromRGB(140, 210, 160)
+			title.TextSize = 13 title.TextXAlignment = Enum.TextXAlignment.Left title.ZIndex = 22 title.Parent = holder
+			local sc = makeScroller(holder) sc.Position = UDim2.fromOffset(0, 34) sc.Size = UDim2.new(1, 0, 1, -34) sc.ZIndex = 21
+			local lay = Instance.new("UIListLayout") lay.Parent = sc
+			pad(sc, 12, 8, 6, 8)
+			local function addLine(text, color, click)
+				local e = Instance.new("TextButton")
+				e.Size = UDim2.new(1, 0, 0, 17) e.BackgroundTransparency = 1 e.AutoButtonColor = false
+				e.Font = Enum.Font.Code e.Text = text e.TextColor3 = color or DT_TXT e.TextSize = 13
+				e.TextXAlignment = Enum.TextXAlignment.Left e.LayoutOrder = #sc:GetChildren() e.ZIndex = 21 e.Parent = sc
+				if click then
+					e.MouseButton1Click:Connect(click)
+				end
+			end
+			addLine("▾ Response Headers / Body", DT_MUT)
+			for li, line in ipairs(row.resp) do
+				local isTok = row.tokenLine == li
+				addLine("  " .. line, isTok and Color3.fromRGB(140, 255, 170) or DT_TXT, isTok and function() copyToClipboard(row.token) end or nil)
+			end
+		end
+		renderNetwork = function(holder)
+			clearKids(holder)
+			local head = Instance.new("Frame")
+			head.Size = UDim2.new(1, 0, 0, 22) head.BackgroundColor3 = DT_BAR head.BorderSizePixel = 0
+			head.ZIndex = 22 head.Parent = holder
+			for _, c in ipairs({ { "Name", 0.0 }, { "Status", 0.46 }, { "Type", 0.60 }, { "Size", 0.76 }, { "Time", 0.88 } }) do
+				local l = Instance.new("TextLabel") l.BackgroundTransparency = 1
+				l.Position = UDim2.new(c[2], 8, 0, 0) l.Size = UDim2.new(0.2, 0, 1, 0)
+				l.Font = Enum.Font.GothamMedium l.Text = c[1] l.TextColor3 = DT_MUT l.TextSize = 11
+				l.TextXAlignment = Enum.TextXAlignment.Left l.ZIndex = 22 l.Parent = head
+			end
+			local sc = makeScroller(holder) sc.Position = UDim2.fromOffset(0, 22) sc.Size = UDim2.new(1, 0, 1, -22) sc.ZIndex = 21
+			local lay = Instance.new("UIListLayout") lay.Parent = sc
+			for i, row in ipairs(networkFor(currentSite)) do
+				local b = Instance.new("TextButton")
+				b.Size = UDim2.new(1, 0, 0, 22) b.BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 42) or DT_BG
+				b.AutoButtonColor = false b.Text = "" b.LayoutOrder = i b.ZIndex = 21 b.Parent = sc
+				local function cell(x, w, text, color)
+					local l = Instance.new("TextLabel") l.BackgroundTransparency = 1
+					l.Position = UDim2.new(x, 8, 0, 0) l.Size = UDim2.new(w, -8, 1, 0)
+					l.Font = Enum.Font.Code l.Text = text l.TextColor3 = color or DT_TXT l.TextSize = 12
+					l.TextXAlignment = Enum.TextXAlignment.Left l.TextTruncate = Enum.TextTruncate.AtEnd
+					l.ZIndex = 21 l.Parent = b
+				end
+				local sc2 = (row.status >= 400) and Color3.fromRGB(244, 135, 113) or Color3.fromRGB(140, 210, 160)
+				cell(0.0, 0.46, row.method .. " " .. row.name, DT_ACC)
+				cell(0.46, 0.14, tostring(row.status), sc2)
+				cell(0.60, 0.16, row.type, DT_MUT)
+				cell(0.76, 0.12, row.size, DT_MUT)
+				cell(0.88, 0.12, row.time, DT_MUT)
+				b.MouseEnter:Connect(function() b.BackgroundColor3 = Color3.fromRGB(48, 52, 62) end)
+				b.MouseLeave:Connect(function() b.BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 42) or DT_BG end)
+				b.MouseButton1Click:Connect(function() netDetail(holder, row) end)
+			end
+		end
+
+		local function renderApp(holder)
+			local title = Instance.new("TextLabel")
+			title.Position = UDim2.fromOffset(12, 6) title.Size = UDim2.new(1, -24, 0, 20)
+			title.BackgroundTransparency = 1 title.Font = Enum.Font.GothamMedium
+			title.Text = "🍪 Cookies — " .. currentSite.url title.TextColor3 = DT_TXT title.TextSize = 13
+			title.TextXAlignment = Enum.TextXAlignment.Left title.ZIndex = 22 title.Parent = holder
+			local head = Instance.new("Frame")
+			head.Position = UDim2.fromOffset(0, 30) head.Size = UDim2.new(1, 0, 0, 22) head.BackgroundColor3 = DT_BAR
+			head.BorderSizePixel = 0 head.ZIndex = 22 head.Parent = holder
+			for _, c in ipairs({ { "Name", 0.0 }, { "Value", 0.3 }, { "Domain", 0.72 } }) do
+				local l = Instance.new("TextLabel") l.BackgroundTransparency = 1
+				l.Position = UDim2.new(c[2], 10, 0, 0) l.Size = UDim2.new(0.4, 0, 1, 0)
+				l.Font = Enum.Font.GothamMedium l.Text = c[1] l.TextColor3 = DT_MUT l.TextSize = 11
+				l.TextXAlignment = Enum.TextXAlignment.Left l.ZIndex = 22 l.Parent = head
+			end
+			local sc = makeScroller(holder) sc.Position = UDim2.fromOffset(0, 52) sc.Size = UDim2.new(1, 0, 1, -52) sc.ZIndex = 21
+			local lay = Instance.new("UIListLayout") lay.Parent = sc
+			for i, ck in ipairs(cookiesFor(currentSite)) do
+				local b = Instance.new("Frame")
+				b.Size = UDim2.new(1, 0, 0, 24) b.BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(38, 38, 42) or DT_BG
+				b.BorderSizePixel = 0 b.LayoutOrder = i b.ZIndex = 21 b.Parent = sc
+				local nm = Instance.new("TextLabel") nm.BackgroundTransparency = 1
+				nm.Position = UDim2.new(0, 10, 0, 0) nm.Size = UDim2.new(0.3, -10, 1, 0)
+				nm.Font = Enum.Font.Code nm.Text = ck.name nm.TextColor3 = DT_TXT nm.TextSize = 12
+				nm.TextXAlignment = Enum.TextXAlignment.Left nm.ZIndex = 21 nm.Parent = b
+				local val = Instance.new("TextButton") val.BackgroundTransparency = 1
+				val.Position = UDim2.new(0.3, 10, 0, 0) val.Size = UDim2.new(0.42, -10, 1, 0)
+				val.Font = Enum.Font.Code val.Text = ck.value val.TextColor3 = DT_ACC val.TextSize = 12
+				val.TextXAlignment = Enum.TextXAlignment.Left val.TextTruncate = Enum.TextTruncate.AtEnd
+				val.AutoButtonColor = false val.ZIndex = 21 val.Parent = b
+				val.MouseButton1Click:Connect(function() copyToClipboard(ck.value) end)
+				local dm = Instance.new("TextLabel") dm.BackgroundTransparency = 1
+				dm.Position = UDim2.new(0.72, 10, 0, 0) dm.Size = UDim2.new(0.28, -10, 1, 0)
+				dm.Font = Enum.Font.Code dm.Text = ck.domain or "" dm.TextColor3 = DT_MUT dm.TextSize = 12
+				dm.TextXAlignment = Enum.TextXAlignment.Left dm.ZIndex = 21 dm.Parent = b
+			end
+		end
+
+		local tabBtns, unders = {}, {}
+		local function show()
+			clearKids(body)
+			if not currentSite then
+				local l = Instance.new("TextLabel") l.BackgroundTransparency = 1 l.Size = UDim2.fromScale(1, 1)
+				l.Font = Enum.Font.Code l.Text = "// 먼저 해킹 대상 사이트에 접속하세요." l.TextColor3 = DT_MUT
+				l.TextSize = 13 l.ZIndex = 21 l.Parent = body
+				return
+			end
+			if devTab == "Elements" then renderElements(body)
+			elseif devTab == "Console" then renderConsole(body)
+			elseif devTab == "Network" then renderNetwork(body)
+			else renderApp(body) end
+		end
 		local function refreshTabs()
 			for name, b in pairs(tabBtns) do
 				local on = name == devTab
-				b.BackgroundColor3 = on and C.dark or C.darkPan
-				b.TextColor3 = on and C.termGrn or Color3.fromRGB(170,178,190)
+				b.TextColor3 = on and Color3.fromRGB(235, 235, 240) or DT_MUT
+				unders[name].BackgroundTransparency = on and 0 or 1
 			end
 		end
-		for i, name in ipairs({ "Elements", "Network", "Console" }) do
+		local tx = 6
+		for _, name in ipairs({ "Elements", "Console", "Network", "Application" }) do
 			local b = Instance.new("TextButton")
-			b.Position = UDim2.fromOffset((i - 1) * 100, 0)
-			b.Size = UDim2.fromOffset(100, 32)
-			b.BackgroundColor3 = C.darkPan b.Font = Enum.Font.Code
-			b.Text = name b.TextSize = 13 b.TextColor3 = Color3.fromRGB(170,178,190)
-			b.ZIndex = 22 b.Parent = tabbar
-			b.MouseButton1Click:Connect(function() devTab = name refreshTabs() renderBody() end)
-			tabBtns[name] = b
+			b.Position = UDim2.fromOffset(tx, 0) b.Size = UDim2.fromOffset(86, 30)
+			b.BackgroundTransparency = 1 b.Font = Enum.Font.GothamMedium b.Text = name
+			b.TextColor3 = DT_MUT b.TextSize = 12 b.ZIndex = 22 b.Parent = bar
+			local under = Instance.new("Frame") under.AnchorPoint = Vector2.new(0.5, 1)
+			under.Position = UDim2.fromScale(0.5, 1) under.Size = UDim2.new(1, -16, 0, 2)
+			under.BackgroundColor3 = DT_ACC under.BorderSizePixel = 0 under.ZIndex = 22 under.Parent = b
+			tabBtns[name] = b unders[name] = under
+			b.MouseButton1Click:Connect(function() devTab = name refreshTabs() show() end)
+			tx = tx + 90
 		end
-		refreshTabs() renderBody()
+		refreshTabs() show()
 	end
 
 	local function toggleDev()
@@ -965,53 +1155,133 @@ openBrowser = function()
 
 	showSite = function(t)
 		destroyDev() currentSite = t clearKids(page)
-		urlBar.Text = "  ⚠  " .. t.url
+		urlBar.Text = "  🔒  https://" .. t.url
 		Tutorial.notify("siteVisit")
-		local scr = makeScroller(page)
-		scr.Size = UDim2.fromScale(1, 1) scr.ZIndex = 2
-		local lay = Instance.new("UIListLayout") lay.Padding = UDim.new(0, 0) lay.Parent = scr
 
-		local hero = Instance.new("Frame")
-		hero.Size = UDim2.new(1, 0, 0, 140) hero.BackgroundColor3 = Color3.fromRGB(30, 40, 70)
-		hero.BorderSizePixel = 0 hero.LayoutOrder = 1 hero.ZIndex = 2 hero.Parent = scr
-		local hg = Instance.new("UIGradient") hg.Rotation = 30
-		hg.Color = ColorSequence.new(Color3.fromRGB(45, 60, 110), Color3.fromRGB(22, 28, 52)) hg.Parent = hero
-		local hname = Instance.new("TextLabel")
-		hname.BackgroundTransparency = 1 hname.Position = UDim2.fromOffset(30, 36)
-		hname.Size = UDim2.new(1, -60, 0, 40) hname.Font = Enum.Font.GothamBold
-		hname.Text = t.name hname.TextColor3 = Color3.fromRGB(255,255,255) hname.TextSize = 28
-		hname.TextXAlignment = Enum.TextXAlignment.Left hname.ZIndex = 2 hname.Parent = hero
-		local hdesc = Instance.new("TextLabel")
-		hdesc.BackgroundTransparency = 1 hdesc.Position = UDim2.fromOffset(30, 80)
-		hdesc.Size = UDim2.new(1, -60, 0, 24) hdesc.Font = Enum.Font.Gotham
-		hdesc.Text = t.desc hdesc.TextColor3 = Color3.fromRGB(190, 200, 220) hdesc.TextSize = 15
-		hdesc.TextXAlignment = Enum.TextXAlignment.Left hdesc.ZIndex = 2 hdesc.Parent = hero
+		local KIND = {
+			generator = { c = Color3.fromRGB(88, 101, 242),  tag = "GENERATOR" },
+			bank      = { c = Color3.fromRGB(16, 122, 87),   tag = "ONLINE BANKING" },
+			portal    = { c = Color3.fromRGB(37, 99, 235),   tag = "PORTAL" },
+			crypto    = { c = Color3.fromRGB(217, 119, 6),    tag = "CRYPTO" },
+			store     = { c = Color3.fromRGB(219, 39, 119),   tag = "STORE" },
+			scada     = { c = Color3.fromRGB(190, 50, 50),    tag = "SCADA" },
+			corp      = { c = Color3.fromRGB(30, 64, 175),    tag = "ENTERPRISE" },
+			market    = { c = Color3.fromRGB(24, 24, 28),     tag = "MARKET" },
+			sat       = { c = Color3.fromRGB(13, 148, 136),   tag = "UPLINK" },
+			gov       = { c = Color3.fromRGB(55, 65, 81),     tag = "GOV" },
+		}
+		local meta = KIND[t.kind] or KIND.portal
+		local variant = (t.kind == "generator") and "gen"
+			or (t.kind == "crypto" or t.kind == "scada" or t.kind == "sat" or t.kind == "store") and "dash"
+			or "login"
 
+		local scr = makeScroller(page) scr.Size = UDim2.fromScale(1, 1) scr.ZIndex = 2
+		local lay = Instance.new("UIListLayout") lay.HorizontalAlignment = Enum.HorizontalAlignment.Center lay.Parent = scr
+		pad(scr, 0, 0, 0, 28)
+
+		local function spacer(h, order)
+			local f = Instance.new("Frame") f.Size = UDim2.new(1, 0, 0, h) f.BackgroundTransparency = 1
+			f.LayoutOrder = order f.ZIndex = 2 f.Parent = scr
+		end
+
+		-- top nav
+		local nav = Instance.new("Frame")
+		nav.Size = UDim2.new(1, 0, 0, 56) nav.BackgroundColor3 = meta.c nav.BorderSizePixel = 0
+		nav.LayoutOrder = 1 nav.ZIndex = 2 nav.Parent = scr
+		local brand = Instance.new("TextLabel") brand.BackgroundTransparency = 1
+		brand.Position = UDim2.fromOffset(24, 0) brand.Size = UDim2.new(1, -220, 1, 0)
+		brand.Font = Enum.Font.GothamBold brand.Text = "● " .. t.name brand.TextColor3 = Color3.fromRGB(255, 255, 255)
+		brand.TextSize = 20 brand.TextXAlignment = Enum.TextXAlignment.Left brand.ZIndex = 3 brand.Parent = nav
+		local navr = Instance.new("TextLabel") navr.BackgroundTransparency = 1
+		navr.AnchorPoint = Vector2.new(1, 0.5) navr.Position = UDim2.new(1, -20, 0.5, 0) navr.Size = UDim2.fromOffset(200, 24)
+		navr.Font = Enum.Font.GothamMedium navr.Text = "Home    Help    Sign in" navr.TextColor3 = Color3.fromRGB(238, 238, 246)
+		navr.TextSize = 13 navr.TextXAlignment = Enum.TextXAlignment.Right navr.ZIndex = 3 navr.Parent = nav
+
+		spacer(20, 2)
+
+		-- main card
 		local card = Instance.new("Frame")
-		card.Size = UDim2.new(1, -60, 0, 150) card.BackgroundColor3 = C.card
-		card.BorderSizePixel = 0 card.LayoutOrder = 2 card.ZIndex = 2 card.Parent = scr
-		corner(card, 12) stroke(card, C.line, 1)
-		local cpad = Instance.new("UIPadding") cpad.PaddingTop = UDim.new(0, 18)
-		cpad.PaddingLeft = UDim.new(0, 18) cpad.Parent = card
-		local clay = Instance.new("UIListLayout") clay.Padding = UDim.new(0, 10) clay.Parent = card
-		local margin = Instance.new("Frame") margin.Size = UDim2.new(1,0,0,16) margin.BackgroundTransparency=1
-		margin.LayoutOrder = 3 margin.Parent = scr -- spacing under hero handled by card offset; keep layout simple
-		local lt = Instance.new("TextLabel")
-		lt.BackgroundTransparency = 1 lt.Size = UDim2.new(1, 0, 0, 26) lt.Font = Enum.Font.GothamBold
-		lt.Text = "🔒 ADMIN PANEL — 접근 거부됨" lt.TextColor3 = C.red lt.TextSize = 18
-		lt.TextXAlignment = Enum.TextXAlignment.Left lt.LayoutOrder = 1 lt.ZIndex = 2 lt.Parent = card
-		local lh = Instance.new("TextLabel")
-		lh.BackgroundTransparency = 1 lh.Size = UDim2.new(1, -18, 0, 22) lh.Font = Enum.Font.Gotham
-		lh.Text = "💡 단서: " .. t.hint .. ((t.enc and t.enc ~= "none") and ("   🔐 암호화: " .. (t.enc == "rot13" and "ROT13" or "역순(Reverse)") .. " → Decoder 사용") or "") .. (upg.hint and "   🔓[자동힌트]" or "") lh.TextColor3 = C.muted lh.TextSize = 14
-		lh.TextXAlignment = Enum.TextXAlignment.Left lh.LayoutOrder = 2 lh.ZIndex = 2 lh.Parent = card
-		local od = Instance.new("TextButton")
-		od.Size = UDim2.fromOffset(240, 38) od.BackgroundColor3 = C.dark od.Font = Enum.Font.Code
-		od.Text = "</> 개발자 도구 열기 (F12)" od.TextColor3 = C.termGrn od.TextSize = 14
-		od.LayoutOrder = 3 od.ZIndex = 2 od.Parent = card corner(od, 8)
+		card.Size = UDim2.new(1, -64, 0, 0) card.AutomaticSize = Enum.AutomaticSize.Y
+		card.BackgroundColor3 = C.card card.BorderSizePixel = 0 card.LayoutOrder = 3 card.ZIndex = 2 card.Parent = scr
+		corner(card, 14) stroke(card, C.line, 1)
+		local cpad = Instance.new("UIPadding")
+		cpad.PaddingTop = UDim.new(0, 22) cpad.PaddingBottom = UDim.new(0, 22)
+		cpad.PaddingLeft = UDim.new(0, 24) cpad.PaddingRight = UDim.new(0, 24) cpad.Parent = card
+		local clay = Instance.new("UIListLayout") clay.Padding = UDim.new(0, 12) clay.Parent = card
+
+		local function heading(text, order)
+			local l = Instance.new("TextLabel") l.BackgroundTransparency = 1 l.Size = UDim2.new(1, 0, 0, 30)
+			l.AutomaticSize = Enum.AutomaticSize.Y l.Font = Enum.Font.GothamBold l.Text = text l.TextColor3 = C.text
+			l.TextSize = 22 l.TextXAlignment = Enum.TextXAlignment.Left l.LayoutOrder = order l.ZIndex = 2 l.Parent = card
+		end
+		local function sub(text, order)
+			local l = Instance.new("TextLabel") l.BackgroundTransparency = 1 l.Size = UDim2.new(1, 0, 0, 20)
+			l.AutomaticSize = Enum.AutomaticSize.Y l.TextWrapped = true l.Font = Enum.Font.Gotham l.Text = text
+			l.TextColor3 = C.muted l.TextSize = 14 l.TextXAlignment = Enum.TextXAlignment.Left l.LayoutOrder = order l.ZIndex = 2 l.Parent = card
+		end
+		local function field(ph, order)
+			local box = Instance.new("TextBox") box.Size = UDim2.new(1, 0, 0, 40) box.BackgroundColor3 = C.surface
+			box.PlaceholderText = ph box.Text = "" box.Font = Enum.Font.Gotham box.TextSize = 15 box.TextColor3 = C.text
+			box.TextXAlignment = Enum.TextXAlignment.Left box.ClearTextOnFocus = false box.LayoutOrder = order box.ZIndex = 2 box.Parent = card
+			corner(box, 8) stroke(box, C.line, 1) pad(box, 14, 14, 0, 0)
+		end
+		local function primary(text, order, msg)
+			local b = Instance.new("TextButton") b.Size = UDim2.new(1, 0, 0, 42) b.BackgroundColor3 = meta.c
+			b.Font = Enum.Font.GothamBold b.Text = text b.TextColor3 = Color3.fromRGB(255, 255, 255) b.TextSize = 15
+			b.LayoutOrder = order b.ZIndex = 2 b.Parent = card corner(b, 8)
+			b.MouseButton1Click:Connect(function() toast(msg) end)
+		end
+
+		heading(meta.tag .. "  ·  " .. t.name, 1)
+		sub(t.desc, 2)
+
+		if variant == "login" then
+			field("아이디 / 이메일", 3)
+			field("비밀번호", 4)
+			primary("로그인", 5, "❌ 잘못된 자격 증명 — 권한이 없습니다 (403)")
+		elseif variant == "gen" then
+			field("로블록스 유저네임", 3)
+			primary("✨ GENERATE", 5, "⚙ 생성하려면 관리자 인증이 필요합니다")
+		else
+			local row = Instance.new("Frame") row.Size = UDim2.new(1, 0, 0, 72) row.BackgroundTransparency = 1
+			row.LayoutOrder = 3 row.ZIndex = 2 row.Parent = card
+			local rl = Instance.new("UIListLayout") rl.FillDirection = Enum.FillDirection.Horizontal rl.Padding = UDim.new(0, 10) rl.Parent = row
+			local stats = { { "잔액", "$" .. math.random(12, 98) .. "k" }, { "노드", "online" }, { "부하", math.random(40, 95) .. "%" } }
+			for si, st in ipairs(stats) do
+				local tile = Instance.new("Frame") tile.Size = UDim2.new(0.32, 0, 1, 0) tile.BackgroundColor3 = C.surface
+				tile.BorderSizePixel = 0 tile.LayoutOrder = si tile.ZIndex = 2 tile.Parent = row corner(tile, 10) stroke(tile, C.line, 1)
+				local v = Instance.new("TextLabel") v.BackgroundTransparency = 1 v.Position = UDim2.fromOffset(12, 12)
+				v.Size = UDim2.new(1, -24, 0, 26) v.Font = Enum.Font.GothamBold v.Text = st[2] v.TextColor3 = meta.c
+				v.TextSize = 20 v.TextXAlignment = Enum.TextXAlignment.Left v.ZIndex = 2 v.Parent = tile
+				local k = Instance.new("TextLabel") k.BackgroundTransparency = 1 k.Position = UDim2.fromOffset(12, 42)
+				k.Size = UDim2.new(1, -24, 0, 18) k.Font = Enum.Font.Gotham k.Text = st[1] k.TextColor3 = C.muted
+				k.TextSize = 13 k.TextXAlignment = Enum.TextXAlignment.Left k.ZIndex = 2 k.Parent = tile
+			end
+			primary("관리자 콘솔 열기", 5, "🔒 관리자 인증이 필요합니다")
+		end
+
+		spacer(16, 4)
+
+		-- locked / hint card
+		local hc = Instance.new("Frame")
+		hc.Size = UDim2.new(1, -64, 0, 122) hc.BackgroundColor3 = Color3.fromRGB(255, 247, 228)
+		hc.BorderSizePixel = 0 hc.LayoutOrder = 5 hc.ZIndex = 2 hc.Parent = scr
+		corner(hc, 12) stroke(hc, Color3.fromRGB(242, 222, 170), 1)
+		local hl = Instance.new("TextLabel") hl.BackgroundTransparency = 1 hl.Position = UDim2.fromOffset(18, 14)
+		hl.Size = UDim2.new(1, -36, 0, 24) hl.Font = Enum.Font.GothamBold
+		hl.Text = "🔒 관리자 영역 — 접근 거부됨 (403 Forbidden)" hl.TextColor3 = Color3.fromRGB(180, 80, 40)
+		hl.TextSize = 16 hl.TextXAlignment = Enum.TextXAlignment.Left hl.ZIndex = 2 hl.Parent = hc
+		local hh = Instance.new("TextLabel") hh.BackgroundTransparency = 1 hh.Position = UDim2.fromOffset(18, 42)
+		hh.Size = UDim2.new(1, -36, 0, 40) hh.Font = Enum.Font.Gotham
+		hh.Text = "💡 단서: " .. t.hint .. (upg.hint and "   🔓[자동힌트]" or "")
+		hh.TextColor3 = Color3.fromRGB(120, 90, 40) hh.TextSize = 14 hh.TextWrapped = true
+		hh.TextXAlignment = Enum.TextXAlignment.Left hh.TextYAlignment = Enum.TextYAlignment.Top hh.ZIndex = 2 hh.Parent = hc
+		local od = Instance.new("TextButton") od.AnchorPoint = Vector2.new(0, 1) od.Position = UDim2.new(0, 18, 1, -14)
+		od.Size = UDim2.fromOffset(232, 34) od.BackgroundColor3 = C.dark od.Font = Enum.Font.Code
+		od.Text = "</> 개발자 도구 열기 (F12)" od.TextColor3 = C.termGrn od.TextSize = 13 od.ZIndex = 2 od.Parent = hc corner(od, 8)
 		od.MouseButton1Click:Connect(function() if not devOpen then toggleDev() end end)
 
-		-- position card below hero using layout: hero(1), card(2). Add gap via card top margin
-		card.Position = UDim2.new() -- managed by list layout
+		spacer(24, 6)
 	end
 
 	homeBtn.MouseButton1Click:Connect(showHome)
@@ -1289,10 +1559,8 @@ openTerminal = function()
 	end
 	local function findT(id) for _, t in ipairs(TARGETS) do if t.id == id then return t end end end
 	local function tokenTabOf(t)
-		for _, tab in ipairs({"Elements","Network","Console"}) do
-			for _, l in ipairs(t.dev[tab] or {}) do if type(l) == "table" then return tab end end
-		end
-		return "?"
+		local m = { elements = "Elements", network = "Network", console = "Console", cookies = "Application" }
+		return m[t.tokenWhere] or "?"
 	end
 
 	local function run(cmd)
