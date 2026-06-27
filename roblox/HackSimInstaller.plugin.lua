@@ -698,69 +698,124 @@ end
 ----------------------------------------------------------------------
 -- Targets
 ----------------------------------------------------------------------
+-- decode helpers + progression state
+local function rot13(s)
+	return (s:gsub("%a", function(ch)
+		local base = (ch:lower() == ch) and 97 or 65
+		return string.char((ch:byte() - base + 13) % 26 + base)
+	end))
+end
+local function applyDecode(method, s)
+	if method == "reverse" then return string.reverse(s)
+	elseif method == "rot13" then return rot13(s)
+	else return s end
+end
+
+local totalEarned, hacksDone = 0, 0
+local upg = { mult = 1, speed = 1, hint = false }
+local function isUnlocked(t) return totalEarned >= (t.unlockAt or 0) end
+
 local TARGETS = {
-	{
-		id = "freerobux", name = "FreeRobux Generator", url = "free-robux-generator.com",
-		reward = 200, secret = "sk_live_8842XQ",
-		desc = "무료 로벅스 생성기 (관리자 패널 잠김)",
-		hint = "HTML 주석을 확인하세요 — Elements 탭",
-		dev = {
-			Elements = {
-				"<!DOCTYPE html>", "<html>", "  <body>",
-				"    <h1>FREE ROBUX</h1>",
-				{ text = "    <!-- DEPLOY_KEY = sk_live_8842XQ (배포 전 삭제!) -->", token = "sk_live_8842XQ" },
-				"    <button>GENERATE</button>", "  </body>", "</html>",
-			},
-			Network = {
-				"GET  /            200  8ms", "GET  /style.css   200  14ms",
-				{ text = "GET  /api/ping    200  {tmp:'tmp_0000'}", token = "tmp_0000" },
-			},
-			Console = { "app.js:1  loaded", "app.js:88 warn: generator is fake" },
-		},
-	},
-	{
-		id = "databank", name = "DataBank Online", url = "secure.databank-online.com",
-		reward = 450, secret = "BANKTOKEN-7741",
-		desc = "온라인 뱅킹 로그인 (보안 1등급)",
-		hint = "로그인 요청의 응답을 보세요 — Network 탭",
-		dev = {
-			Elements = {
-				"<html>", "  <body>", "    <h2>DataBank 로그인</h2>",
-				{ text = "    <input name='demo' value='BANK-DEMO-0001'>", token = "BANK-DEMO-0001" },
-				"    <input type='password'>", "  </body>", "</html>",
-			},
-			Network = {
-				"GET   /login      200  10ms", "GET   /vendor.js  200  60ms",
-				{ text = "POST  /api/auth   200  {session_token:'BANKTOKEN-7741'}", token = "BANKTOKEN-7741" },
-				"GET   /api/balance 401  3ms",
-			},
-			Console = { "vendor.js:12 init ok", "auth.js:5 do NOT log tokens" },
-		},
-	},
-	{
-		id = "school", name = "School Portal", url = "portal.school-net.edu",
-		reward = 700, secret = "md5:9af3c12e",
-		desc = "학교 성적 포털 (교직원 인증 필요)",
-		hint = "콘솔 로그에 무언가 새어나왔습니다 — Console 탭",
-		dev = {
-			Elements = { "<html><body>", "  <h1>School Portal</h1>", "  <p>로그인 후 성적 확인</p>", "</body></html>" },
-			Network = {
-				"GET  /portal     200  9ms",
-				{ text = "GET  /api/me      200  {role:'guest', t:'sess_guest'}", token = "sess_guest" },
-			},
-			Console = {
-				"core.js:3 portal ready",
-				{ text = "auth.js:40 [DEBUG] staff hash => md5:9af3c12e", token = "md5:9af3c12e" },
-				"core.js:9 TODO: disable debug logging",
-			},
-		},
-	},
+	{ id="freerobux", name="FreeRobux Generator", url="free-robux-generator.com",
+		reward=200, unlockAt=0, enc="none", secret="sk_live_8842XQ",
+		desc="무료 로벅스 생성기 (관리자 패널 잠김)", hint="HTML 주석을 확인하세요 — Elements 탭",
+		dev={ Elements={ "<!DOCTYPE html>","<html>","  <body>","    <h1>FREE ROBUX</h1>",
+			{ text="    <!-- DEPLOY_KEY = sk_live_8842XQ (배포 전 삭제!) -->", token="sk_live_8842XQ" },
+			"    <button>GENERATE</button>","  </body>","</html>" },
+			Network={ "GET  /          200  8ms",{ text="GET  /api/ping  200  {tmp:'tmp_0000'}", token="tmp_0000" } },
+			Console={ "app.js:1 loaded","app.js:88 warn: fake generator" } } },
+
+	{ id="databank", name="DataBank Online", url="secure.databank-online.com",
+		reward=350, unlockAt=0, enc="none", secret="BANKTOKEN-7741",
+		desc="온라인 뱅킹 로그인 (보안 1등급)", hint="로그인 요청의 응답을 보세요 — Network 탭",
+		dev={ Elements={ "<html>","  <body>","    <h2>DataBank 로그인</h2>",
+			{ text="    <input name='demo' value='BANK-DEMO-0001'>", token="BANK-DEMO-0001" },
+			"    <input type='password'>","  </body>","</html>" },
+			Network={ "GET   /login     200  10ms","GET   /vendor.js 200  60ms",
+			{ text="POST  /api/auth  200  {session_token:'BANKTOKEN-7741'}", token="BANKTOKEN-7741" },
+			"GET   /api/balance 401 3ms" },
+			Console={ "vendor.js:12 init ok","auth.js:5 do NOT log tokens" } } },
+
+	{ id="school", name="School Portal", url="portal.school-net.edu",
+		reward=600, unlockAt=600, enc="none", secret="md5:9af3c12e",
+		desc="학교 성적 포털 (교직원 인증 필요)", hint="콘솔 로그를 보세요 — Console 탭",
+		dev={ Elements={ "<html><body>","  <h1>School Portal</h1>","  <p>로그인 후 성적 확인</p>","</body></html>" },
+			Network={ "GET  /portal    200  9ms",{ text="GET  /api/me     200  {role:'guest', t:'sess_guest'}", token="sess_guest" } },
+			Console={ "core.js:3 portal ready",
+			{ text="auth.js:40 [DEBUG] staff hash => md5:9af3c12e", token="md5:9af3c12e" },
+			"core.js:9 TODO: disable debug logging" } } },
+
+	{ id="cryptomine", name="CryptoMine Pool", url="pool.cryptomine.io",
+		reward=850, unlockAt=900, enc="rot13", plain="MINEKEY-5521",
+		desc="암호화폐 채굴 풀 (지갑 인증 필요)", hint="지갑 응답을 보세요 — Network 탭",
+		inject={ tab="Network", text="GET  /api/wallet 200  {k:'%s'}" },
+		dev={ Elements={ "<html><body>","  <h1>CryptoMine</h1>","</body></html>" },
+			Network={ "GET  /            200  7ms","GET  /miner.js    200  33ms" },
+			Console={ "miner.js:2 hashing...",{ text="miner.js:9 debug seed=zvar_qrpbl", token="zvar_qrpbl" } } } },
+
+	{ id="gamevault", name="GameVault Store", url="store.gamevault.gg",
+		reward=1000, unlockAt=900, enc="reverse", plain="VAULT_PASS_77",
+		desc="게임 아이템 상점 (백오피스 잠김)", hint="HTML 주석을 보세요 — Elements 탭",
+		inject={ tab="Elements", text="    <!-- backup pass: %s -->" },
+		dev={ Elements={ "<html>","  <body>","    <h1>GameVault</h1>","    <div class='shop'></div>","  </body>","</html>" },
+			Network={ "GET  /          200  9ms",{ text="GET  /api/promo 200  {code:'SALE2024'}", token="SALE2024" } },
+			Console={ "shop.js:1 ready" } } },
+
+	{ id="citypower", name="City Power Grid", url="scada.citypower.gov",
+		reward=1500, unlockAt=3000, enc="rot13", plain="GRID-ADMIN-9",
+		desc="도시 전력망 제어 시스템 (SCADA)", hint="콘솔 경고를 보세요 — Console 탭",
+		inject={ tab="Console", text="scada.js:12 [WARN] default cred %s" },
+		dev={ Elements={ "<html><body>","  <h1>POWER GRID CONTROL</h1>","</body></html>" },
+			Network={ "GET  /status   200  5ms",{ text="GET  /nodes    200  {id:'node_decoy'}", token="node_decoy" } },
+			Console={ "scada.js:1 boot","scada.js:7 nodes online" } } },
+
+	{ id="megacorp", name="MegaCorp SSO", url="sso.megacorp.com",
+		reward=2000, unlockAt=3000, enc="reverse", plain="CORP-ROOT-X1",
+		desc="대기업 통합 로그인 (SSO)", hint="SSO 응답을 보세요 — Network 탭",
+		inject={ tab="Network", text="POST /sso/auth 200  {root:'%s'}" },
+		dev={ Elements={ "<html><body>","  <h2>MegaCorp 로그인</h2>","</body></html>" },
+			Network={ "GET  /sso       200  11ms","GET  /idp.js    200  40ms" },
+			Console={ "idp.js:3 ready",{ text="idp.js:8 tmp token TMP-DECOY-0", token="TMP-DECOY-0" } } } },
+
+	{ id="darkmarket", name="Dark Market", url="darkmkt.onion",
+		reward=2500, unlockAt=3000, enc="none", secret="btc:1A2b3C4d",
+		desc="다크웹 장터 (관리자 지갑 잠김)", hint="콘솔 로그를 보세요 — Console 탭",
+		dev={ Elements={ "<html><body>","  <h1>::DARK MARKET::</h1>","</body></html>" },
+			Network={ "GET  /          200  90ms",{ text="GET  /vendor   200  {v:'vendor_99'}", token="vendor_99" } },
+			Console={ "tor.js:1 connected",
+			{ text="admin.js:3 wallet leak btc:1A2b3C4d", token="btc:1A2b3C4d" } } } },
+
+	{ id="satellite", name="Orbital Uplink", url="uplink.orbital-sat.net",
+		reward=3500, unlockAt=8000, enc="rot13", plain="SAT-LINK-4420",
+		desc="위성 통신 업링크 (군사 등급)", hint="meta 태그를 보세요 — Elements 탭",
+		inject={ tab="Elements", text="    <meta name='key' content='%s'>" },
+		dev={ Elements={ "<html>","  <head>","  </head>","  <body><h1>ORBITAL UPLINK</h1></body>","</html>" },
+			Network={ "GET  /uplink   200  120ms",{ text="GET  /telemetry 200  {t:'tlm_decoy'}", token="tlm_decoy" } },
+			Console={ "sat.js:1 link up" } } },
+
+	{ id="mainframe", name="Gov Mainframe", url="mainframe.classified.gov",
+		reward=6000, unlockAt=8000, enc="reverse", plain="ROOT@MAINFRAME9",
+		desc="정부 메인프레임 (1급 기밀)", hint="기밀 응답을 보세요 — Network 탭",
+		inject={ tab="Network", text="GET  /classified 200  {auth:'%s'}" },
+		dev={ Elements={ "<html><body>","  <h1>CLASSIFIED SYSTEM</h1>","  <p>ACCESS RESTRICTED</p>","</body></html>" },
+			Network={ "GET  /          403  2ms","GET  /core.js   200  55ms" },
+			Console={ "core.js:1 secure boot",{ text="core.js:4 honeypot key FAKE-TRAP-1", token="FAKE-TRAP-1" } } } },
 }
+
+-- build encrypted token lines from plaintext (token shown = encoded form)
+for _, t in ipairs(TARGETS) do
+	if t.enc and t.enc ~= "none" and t.plain and t.inject then
+		local encTok = applyDecode(t.enc, t.plain)
+		t.secret = t.plain
+		t.dev[t.inject.tab] = t.dev[t.inject.tab] or {}
+		table.insert(t.dev[t.inject.tab], { text = string.format(t.inject.text, encTok), token = encTok })
+	end
+end
 
 ----------------------------------------------------------------------
 -- Forward declarations
 ----------------------------------------------------------------------
-local openBrowser, openHackTool, openTutorial
+local openBrowser, openHackTool, openTutorial, openDecoder, openShop, openTerminal
 local updateMoneyHUD
 
 ----------------------------------------------------------------------
@@ -979,11 +1034,15 @@ openBrowser = function()
 			rw.AnchorPoint = Vector2.new(1, 0.5) rw.Position = UDim2.new(1, -16, 0.5, 0)
 			rw.Size = UDim2.fromOffset(110, 24) rw.BackgroundTransparency = 1
 			rw.Font = Enum.Font.GothamBold
-			rw.Text = pwned[t.id] and "✅ PWNED" or ("$" .. t.reward)
-			rw.TextColor3 = pwned[t.id] and C.green or Color3.fromRGB(217, 160, 40)
+			local unlocked = isUnlocked(t)
+			rw.Text = (not unlocked) and ("🔒 $" .. (t.unlockAt or 0)) or (pwned[t.id] and "✅ PWNED" or ("$" .. t.reward))
+			rw.TextColor3 = (not unlocked) and C.muted or (pwned[t.id] and C.green or Color3.fromRGB(217, 160, 40))
 			rw.TextSize = 14 rw.TextXAlignment = Enum.TextXAlignment.Right
 			rw.ZIndex = 2 rw.Parent = b
-			b.MouseButton1Click:Connect(function() showSite(t) end)
+			if not unlocked then b.BackgroundColor3 = Color3.fromRGB(238,240,244) end
+			b.MouseButton1Click:Connect(function()
+				if unlocked then showSite(t) else toast("🔒 총 $" .. (t.unlockAt or 0) .. " 벌면 해금됩니다") end
+			end)
 		end
 	end
 
@@ -1007,7 +1066,8 @@ openBrowser = function()
 
 		local results = {}
 		for _, t in ipairs(TARGETS) do
-			table.insert(results, { u = "https://" .. t.url, t = t.name .. "   🎯", s = t.desc, site = t })
+			local unlocked = isUnlocked(t)
+			table.insert(results, { u = "https://" .. t.url, t = t.name .. (unlocked and "   🎯" or "   🔒"), s = unlocked and t.desc or ("총 $" .. (t.unlockAt or 0) .. " 벌면 해금"), site = unlocked and t or nil })
 		end
 		table.insert(results, { u = "https://wiki.googule.com/" .. q, t = q .. " - 구글 백과", s = "'" .. q .. "' 에 대한 모든 정보." })
 		table.insert(results, { u = "https://news.googule.com/" .. q, t = q .. " 최신 뉴스", s = "지금 화제의 " .. q .. " 소식." })
@@ -1075,7 +1135,7 @@ openBrowser = function()
 		lt.TextXAlignment = Enum.TextXAlignment.Left lt.LayoutOrder = 1 lt.ZIndex = 2 lt.Parent = card
 		local lh = Instance.new("TextLabel")
 		lh.BackgroundTransparency = 1 lh.Size = UDim2.new(1, -18, 0, 22) lh.Font = Enum.Font.Gotham
-		lh.Text = "💡 단서: " .. t.hint lh.TextColor3 = C.muted lh.TextSize = 14
+		lh.Text = "💡 단서: " .. t.hint .. ((t.enc and t.enc ~= "none") and ("   🔐 암호화: " .. (t.enc == "rot13" and "ROT13" or "역순(Reverse)") .. " → Decoder 사용") or "") .. (upg.hint and "   🔓[자동힌트]" or "") lh.TextColor3 = C.muted lh.TextSize = 14
 		lh.TextXAlignment = Enum.TextXAlignment.Left lh.LayoutOrder = 2 lh.ZIndex = 2 lh.Parent = card
 		local od = Instance.new("TextButton")
 		od.Size = UDim2.fromOffset(240, 38) od.BackgroundColor3 = C.dark od.Font = Enum.Font.Code
@@ -1113,7 +1173,10 @@ openHackTool = function()
 	local function refreshTargets()
 		for _, t in ipairs(TARGETS) do
 			local b = targetBtns[t.id]
-			if pwned[t.id] then
+			if not isUnlocked(t) then
+				b.Text = "  🔒  " .. t.name .. "   (총 $" .. (t.unlockAt or 0) .. " 해금)"
+				b.TextColor3 = Color3.fromRGB(120,128,140) b.BackgroundColor3 = Color3.fromRGB(20,22,28)
+			elseif pwned[t.id] then
 				b.Text = "  ✅  " .. t.name .. "   (PWNED)" b.TextColor3 = Color3.fromRGB(120, 200, 140)
 				b.BackgroundColor3 = Color3.fromRGB(22, 36, 26)
 			elseif selected == t then
@@ -1133,7 +1196,7 @@ openHackTool = function()
 		b.TextXAlignment = Enum.TextXAlignment.Left b.AutoButtonColor = false
 		b.ZIndex = 2 b.Parent = content corner(b, 6)
 		targetBtns[t.id] = b
-		b.MouseButton1Click:Connect(function() if not pwned[t.id] then selected = t refreshTargets() end end)
+		b.MouseButton1Click:Connect(function() if isUnlocked(t) and not pwned[t.id] then selected = t refreshTargets() end end)
 		y += 34
 	end
 	y += 6
@@ -1186,16 +1249,18 @@ openHackTool = function()
 		running = true runBtn.Text = "... 실행 중 ..." runBtn.BackgroundColor3 = Color3.fromRGB(70,74,84)
 		local key, tgt = input.Text, selected
 		task.spawn(function()
-			println("[*] target : " .. tgt.url, Color3.fromRGB(120,200,255)) task.wait(0.3)
-			println("[*] key    : " .. (key ~= "" and key or "(없음)"), C.muted) task.wait(0.3)
-			println("[*] injecting payload ...", C.muted) task.wait(0.45)
-			println("[*] bypassing firewall ...", C.muted) task.wait(0.45)
+			local sp = upg.speed
+			println("[*] target : " .. tgt.url, Color3.fromRGB(120,200,255)) task.wait(0.3*sp)
+			println("[*] key    : " .. (key ~= "" and key or "(없음)"), C.muted) task.wait(0.3*sp)
+			println("[*] injecting payload ...", C.muted) task.wait(0.45*sp)
+			println("[*] bypassing firewall ...", C.muted) task.wait(0.45*sp)
 			if key == tgt.secret then
+				local payout = math.floor(tgt.reward * upg.mult)
 				println("[+] ACCESS GRANTED", C.termGrn)
-				println("[+] 입금 +$" .. tgt.reward, C.termGrn)
-				money += tgt.reward updateMoneyHUD()
+				println("[+] 입금 +$" .. payout, C.termGrn)
+				money += payout totalEarned += tgt.reward hacksDone += 1 updateMoneyHUD()
 				pwned[tgt.id] = true selected = nil refreshTargets()
-				toast("✅ " .. tgt.name .. " 해킹 성공!  +$" .. tgt.reward)
+				toast("✅ " .. tgt.name .. " 해킹 성공!  +$" .. payout)
 			else
 				println("[-] ACCESS DENIED — 잘못된 토큰", Color3.fromRGB(255,110,110))
 				println("    DevTools에서 올바른 토큰을 다시 찾으세요.", Color3.fromRGB(200,150,90))
@@ -1207,6 +1272,196 @@ openHackTool = function()
 	runBtn.MouseButton1Click:Connect(runExploit)
 	refreshTargets()
 	println("HackTool v2.0 — ready.", C.termGrn)
+end
+
+----------------------------------------------------------------------
+-- Decoder
+----------------------------------------------------------------------
+local decoderWin, shopWin, terminalWin
+
+openDecoder = function()
+	if decoderWin and decoderWin.Parent then raise(decoderWin) return end
+	local win, content = createWindow({ title = "Decoder — 암호 해독기", w = 0.42, h = 0.5, x = 0.3, y = 0.18, dark = true, accent = Color3.fromRGB(190,150,255) })
+	decoderWin = win win.Destroying:Connect(function() decoderWin = nil end)
+	local M = 16
+	local info = Instance.new("TextLabel")
+	info.BackgroundTransparency = 1 info.Position = UDim2.fromOffset(M, 12) info.Size = UDim2.new(1, -2*M, 0, 36)
+	info.Font = Enum.Font.Code info.Text = "# 암호화된 토큰을 붙여넣고 방식을 선택하세요\n# 결과를 클릭하면 복사됩니다"
+	info.TextColor3 = Color3.fromRGB(190,150,255) info.TextSize = 12 info.TextWrapped = true
+	info.TextXAlignment = Enum.TextXAlignment.Left info.TextYAlignment = Enum.TextYAlignment.Top
+	info.ZIndex = 2 info.Parent = content
+
+	local input = Instance.new("TextBox")
+	input.Position = UDim2.fromOffset(M, 56) input.Size = UDim2.new(1, -2*M - 100, 0, 34)
+	input.BackgroundColor3 = Color3.fromRGB(20,24,32) input.Font = Enum.Font.Code
+	input.PlaceholderText = "암호화된 토큰" input.Text = "" input.TextColor3 = C.termGrn input.TextSize = 14
+	input.TextXAlignment = Enum.TextXAlignment.Left input.ClearTextOnFocus = false input.ZIndex = 2 input.Parent = content
+	corner(input, 8) stroke(input, Color3.fromRGB(55,65,80), 1) pad(input, 10, 10, 0, 0)
+	local pasteB = Instance.new("TextButton")
+	pasteB.AnchorPoint = Vector2.new(1,0) pasteB.Position = UDim2.new(1, -M, 0, 56) pasteB.Size = UDim2.fromOffset(92, 34)
+	pasteB.BackgroundColor3 = Color3.fromRGB(50,42,70) pasteB.Font = Enum.Font.Code pasteB.Text = "📋 붙여넣기"
+	pasteB.TextColor3 = Color3.fromRGB(210,195,235) pasteB.TextSize = 13 pasteB.ZIndex = 2 pasteB.Parent = content corner(pasteB, 8)
+	pasteB.MouseButton1Click:Connect(function() if Clipboard ~= "" then input.Text = Clipboard end end)
+
+	local outBtn = Instance.new("TextButton")
+	outBtn.Position = UDim2.fromOffset(M, 142) outBtn.Size = UDim2.new(1, -2*M, 0, 40)
+	outBtn.BackgroundColor3 = Color3.fromRGB(30,40,30) outBtn.Font = Enum.Font.Code outBtn.Text = "결과: (방식 선택)"
+	outBtn.TextColor3 = C.termGrn outBtn.TextSize = 14 outBtn.TextXAlignment = Enum.TextXAlignment.Left
+	outBtn.ZIndex = 2 outBtn.Parent = content corner(outBtn, 8) pad(outBtn, 12, 12, 0, 0)
+	local result = ""
+	outBtn.MouseButton1Click:Connect(function() if result ~= "" then copyToClipboard(result) end end)
+
+	local methods = { { "역순(Reverse)", "reverse" }, { "ROT13", "rot13" }, { "원본", "none" } }
+	for i, m in ipairs(methods) do
+		local b = Instance.new("TextButton")
+		b.Position = UDim2.fromOffset(M + (i-1)*((1)) , 100)
+		b.Size = UDim2.new(0.32, -6, 0, 32)
+		b.Position = UDim2.new((i-1)*0.34, M, 0, 100)
+		b.BackgroundColor3 = Color3.fromRGB(40,44,58) b.Font = Enum.Font.GothamMedium b.Text = m[1]
+		b.TextColor3 = C.darkText b.TextSize = 13 b.ZIndex = 2 b.Parent = content corner(b, 6)
+		b.MouseButton1Click:Connect(function()
+			result = applyDecode(m[2], input.Text)
+			outBtn.Text = "결과: " .. result .. "   (클릭=복사)"
+		end)
+	end
+end
+
+----------------------------------------------------------------------
+-- Shop
+----------------------------------------------------------------------
+openShop = function()
+	if shopWin and shopWin.Parent then raise(shopWin) return end
+	local win, content = createWindow({ title = "Shop — 업그레이드", w = 0.44, h = 0.58, x = 0.28, y = 0.14, dark = true, accent = C.green })
+	shopWin = win win.Destroying:Connect(function() shopWin = nil end)
+
+	local items = {
+		{ key="mult",  name="수익 1.5배",      cost=800, desc="해킹 보상이 1.5배가 됩니다",
+			owned=function() return upg.mult > 1 end, apply=function() upg.mult = 1.5 end },
+		{ key="speed", name="익스플로잇 2배속", cost=600, desc="해킹 실행 대기시간이 절반으로",
+			owned=function() return upg.speed < 1 end, apply=function() upg.speed = 0.5 end },
+		{ key="hint",  name="자동 힌트",        cost=400, desc="사이트에서 토큰 위치/암호화 표시",
+			owned=function() return upg.hint end, apply=function() upg.hint = true end },
+	}
+
+	local scr = makeScroller(content) scr.Size = UDim2.fromScale(1,1) scr.ZIndex = 2
+	local lay = Instance.new("UIListLayout") lay.Padding = UDim.new(0, 12) lay.Parent = scr
+	pad(scr, 16, 16, 14, 14)
+
+	local function render()
+		clearKids(scr)
+		local head = Instance.new("TextLabel")
+		head.BackgroundTransparency = 1 head.Size = UDim2.new(1, 0, 0, 24) head.Font = Enum.Font.Code
+		head.Text = "# 번 돈으로 능력을 강화하세요  (잔액: $" .. money .. ")"
+		head.TextColor3 = C.termGrn head.TextSize = 13 head.TextXAlignment = Enum.TextXAlignment.Left
+		head.LayoutOrder = 0 head.ZIndex = 2 head.Parent = scr
+		for i, it in ipairs(items) do
+			local row = Instance.new("Frame")
+			row.Size = UDim2.new(1, 0, 0, 76) row.BackgroundColor3 = C.darkPan row.BorderSizePixel = 0
+			row.LayoutOrder = i row.ZIndex = 2 row.Parent = scr corner(row, 10)
+			local nm = Instance.new("TextLabel")
+			nm.BackgroundTransparency = 1 nm.Position = UDim2.fromOffset(14, 10) nm.Size = UDim2.new(1, -130, 0, 22)
+			nm.Font = Enum.Font.GothamBold nm.Text = it.name nm.TextColor3 = C.darkText nm.TextSize = 16
+			nm.TextXAlignment = Enum.TextXAlignment.Left nm.ZIndex = 2 nm.Parent = row
+			local ds = Instance.new("TextLabel")
+			ds.BackgroundTransparency = 1 ds.Position = UDim2.fromOffset(14, 36) ds.Size = UDim2.new(1, -130, 0, 30)
+			ds.Font = Enum.Font.Gotham ds.Text = it.desc ds.TextColor3 = C.muted ds.TextSize = 13
+			ds.TextXAlignment = Enum.TextXAlignment.Left ds.TextWrapped = true ds.ZIndex = 2 ds.Parent = row
+			local buy = Instance.new("TextButton")
+			buy.AnchorPoint = Vector2.new(1, 0.5) buy.Position = UDim2.new(1, -14, 0.5, 0) buy.Size = UDim2.fromOffset(100, 38)
+			buy.Font = Enum.Font.GothamBold buy.TextSize = 14 buy.ZIndex = 2 buy.Parent = row corner(buy, 8)
+			if it.owned() then
+				buy.Text = "보유중" buy.BackgroundColor3 = Color3.fromRGB(30,50,34) buy.TextColor3 = C.green
+			else
+				buy.Text = "$" .. it.cost buy.BackgroundColor3 = C.green buy.TextColor3 = Color3.fromRGB(255,255,255)
+				buy.MouseButton1Click:Connect(function()
+					if it.owned() then return end
+					if money >= it.cost then
+						money -= it.cost it.apply() updateMoneyHUD()
+						toast("✅ 구매 완료: " .. it.name) render()
+					else
+						toast("💸 돈이 부족해요 ($" .. it.cost .. " 필요)")
+					end
+				end)
+			end
+		end
+	end
+	render()
+end
+
+----------------------------------------------------------------------
+-- Terminal
+----------------------------------------------------------------------
+openTerminal = function()
+	if terminalWin and terminalWin.Parent then raise(terminalWin) return end
+	local win, content = createWindow({ title = "Terminal", w = 0.5, h = 0.56, x = 0.24, y = 0.16, dark = true, accent = C.termGrn })
+	terminalWin = win win.Destroying:Connect(function() terminalWin = nil end)
+	local M = 12
+
+	local out = makeScroller(content)
+	out.Position = UDim2.fromOffset(M, M) out.Size = UDim2.new(1, -2*M, 1, -2*M - 42) out.ZIndex = 2
+	local olay = Instance.new("UIListLayout") olay.Padding = UDim.new(0, 1) olay.Parent = out
+	pad(out, 6, 6, 6, 6)
+	local function pr(text, color)
+		local l = Instance.new("TextLabel")
+		l.BackgroundTransparency = 1 l.Size = UDim2.new(1, 0, 0, 16) l.AutomaticSize = Enum.AutomaticSize.Y
+		l.TextWrapped = true l.Font = Enum.Font.Code l.Text = text l.TextColor3 = color or C.darkText
+		l.TextSize = 13 l.TextXAlignment = Enum.TextXAlignment.Left l.LayoutOrder = #out:GetChildren()
+		l.ZIndex = 2 l.Parent = out
+	end
+
+	local input = Instance.new("TextBox")
+	input.AnchorPoint = Vector2.new(0, 1) input.Position = UDim2.new(0, M, 1, -M) input.Size = UDim2.new(1, -2*M, 0, 32)
+	input.BackgroundColor3 = Color3.fromRGB(8,10,14) input.Font = Enum.Font.Code input.PlaceholderText = "명령어 입력 (help)"
+	input.Text = "" input.TextColor3 = C.termGrn input.TextSize = 14 input.TextXAlignment = Enum.TextXAlignment.Left
+	input.ClearTextOnFocus = false input.ZIndex = 2 input.Parent = content corner(input, 6) pad(input, 10, 10, 0, 0)
+
+	local function words(s)
+		local t = {} for w in string.gmatch(s, "%S+") do table.insert(t, w) end return t
+	end
+	local function findT(id) for _, t in ipairs(TARGETS) do if t.id == id then return t end end end
+	local function tokenTabOf(t)
+		for _, tab in ipairs({"Elements","Network","Console"}) do
+			for _, l in ipairs(t.dev[tab] or {}) do if type(l) == "table" then return tab end end
+		end
+		return "?"
+	end
+
+	local function run(cmd)
+		pr("$ " .. cmd, Color3.fromRGB(120,200,255))
+		local a = words(cmd:lower())
+		local c = a[1]
+		if c == "help" then
+			pr("명령어: help | ls | scan <id> | decode <rev|rot> <text> | bal | clear", C.darkText)
+		elseif c == "ls" then
+			for _, t in ipairs(TARGETS) do
+				local st = pwned[t.id] and "PWNED" or (isUnlocked(t) and "OPEN" or "LOCKED")
+				pr(string.format("  %-12s $%-5d  %s  (%s)", t.id, t.reward, st, t.url), C.darkText)
+			end
+		elseif c == "scan" then
+			local t = findT(a[2] or "")
+			if not t then pr("  대상을 찾을 수 없음. 'ls' 로 id 확인", C.red)
+			elseif not isUnlocked(t) then pr("  잠긴 대상입니다. (총 $" .. (t.unlockAt or 0) .. " 필요)", Color3.fromRGB(240,180,90))
+			else
+				pr("  scanning " .. t.url .. " ...", C.muted)
+				pr("  토큰 위치: " .. tokenTabOf(t) .. " 탭" .. ((t.enc and t.enc~="none") and ("  / 암호화: " .. t.enc) or ""), C.termGrn)
+			end
+		elseif c == "decode" then
+			local m = a[2]; local txt = a[3]
+			local method = (m == "rev") and "reverse" or (m == "rot") and "rot13" or "none"
+			if not txt then pr("  사용법: decode <rev|rot> <text>", C.red)
+			else local r = applyDecode(method, txt) pr("  => " .. r, C.termGrn) copyToClipboard(r) end
+		elseif c == "bal" then
+			pr("  잔액 $" .. money .. " | 누적 $" .. totalEarned .. " | 해킹 " .. hacksDone .. "건", C.green)
+		elseif c == "clear" then
+			clearKids(out)
+		elseif c == nil then
+		else pr("  알 수 없는 명령어: " .. tostring(c) .. "  ('help')", C.red) end
+	end
+
+	input.FocusLost:Connect(function(enter)
+		if enter and input.Text ~= "" then local t = input.Text input.Text = "" run(t) end
+	end)
+	pr("HackOS Terminal — 'help' 입력", C.termGrn)
 end
 
 ----------------------------------------------------------------------
@@ -1234,6 +1489,9 @@ end
 
 makeIcon("GOOGULE", 1, "G", Color3.fromRGB(255,255,255), Color3.fromRGB(66,133,244), openBrowser)
 makeIcon("HackTool", 2, ">_", Color3.fromRGB(20,24,32), C.termGrn, openHackTool)
+makeIcon("Decoder", 3, "D", Color3.fromRGB(42,32,62), Color3.fromRGB(190,150,255), function() openDecoder() end)
+makeIcon("Shop", 4, "$", Color3.fromRGB(24,42,30), Color3.fromRGB(120,230,150), function() openShop() end)
+makeIcon("Terminal", 5, "_", Color3.fromRGB(12,14,20), C.termGrn, function() openTerminal() end)
 
 ----------------------------------------------------------------------
 -- Taskbar
@@ -1257,7 +1515,7 @@ end
 -- center cluster
 local center = Instance.new("Frame")
 center.AnchorPoint = Vector2.new(0.5, 0.5) center.Position = UDim2.fromScale(0.5, 0.5)
-center.Size = UDim2.fromOffset(220, 40) center.BackgroundTransparency = 1 center.ZIndex = 31 center.Parent = taskbar
+center.Size = UDim2.fromOffset(330, 40) center.BackgroundTransparency = 1 center.ZIndex = 31 center.Parent = taskbar
 local clay = Instance.new("UIListLayout") clay.FillDirection = Enum.FillDirection.Horizontal
 clay.HorizontalAlignment = Enum.HorizontalAlignment.Center clay.VerticalAlignment = Enum.VerticalAlignment.Center
 clay.Padding = UDim.new(0, 10) clay.Parent = center
@@ -1271,6 +1529,9 @@ end
 centerApp(1, "?", C.accent, function() openTutorial() end)
 centerApp(2, "G", Color3.fromRGB(66,133,244), openBrowser)
 centerApp(3, ">", C.termGrn, openHackTool)
+centerApp(4, "D", Color3.fromRGB(190,150,255), function() openDecoder() end)
+centerApp(5, "$", Color3.fromRGB(120,230,150), function() openShop() end)
+centerApp(6, "_", C.termGrn, function() openTerminal() end)
 
 -- money pill (right)
 local moneyHUD = Instance.new("TextLabel")
@@ -1314,6 +1575,7 @@ openTutorial = function()
 		{ icon = "🔧", t = "2. 개발자 도구 (F12)", d = "사이트에서 F12 또는 'DevTools' 버튼을 누르세요. Elements / Network / Console 탭을 뒤져 숨겨진 토큰을 찾습니다." },
 		{ icon = "📋", t = "3. 토큰 복사", d = "초록색 토큰을 클릭하면 복사돼요. 가짜 미끼 토큰도 섞여 있으니 단서를 잘 보세요!" },
 		{ icon = "⚡", t = "4. HackTool 로 해킹", d = "HackTool을 열고 대상 선택 → '붙여넣기' → 'EXPLOIT 실행'. 토큰이 맞으면 돈을 벌어요. 💰" },
+		{ icon = "🧰", t = "도구들", d = "🔐 암호화된 토큰은 Decoder로 풀고, 💲Shop에서 업그레이드를 사고, _ Terminal에서 scan/ls/decode 명령을 쓸 수 있어요. 돈을 모아 더 비싼 대상을 해금하세요!" },
 	}
 	local idx = 1
 
