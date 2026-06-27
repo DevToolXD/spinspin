@@ -102,6 +102,25 @@ local function pad(inst, l, r, t, b)
 	return p
 end
 
+-- draw an "X" out of two lines (so it never shows a missing-glyph box)
+local function addX(btn, lineColor, len)
+	local lines = {}
+	for _, r in ipairs({ 45, -45 }) do
+		local ln = Instance.new("Frame")
+		ln.AnchorPoint = Vector2.new(0.5, 0.5)
+		ln.Position = UDim2.fromScale(0.5, 0.5)
+		ln.Size = UDim2.fromOffset(len or 11, 2)
+		ln.Rotation = r
+		ln.BackgroundColor3 = lineColor
+		ln.BorderSizePixel = 0
+		ln.ZIndex = (btn.ZIndex or 1) + 1
+		ln.Parent = btn
+		local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 1) c.Parent = ln
+		lines[#lines + 1] = ln
+	end
+	return lines
+end
+
 local function clearKids(f)
 	for _, c in ipairs(f:GetChildren()) do
 		if not c:IsA("UIListLayout") and not c:IsA("UIPadding") and not c:IsA("UIGridLayout") then
@@ -228,6 +247,7 @@ local topZ = 100
 local function raise(win)
 	topZ += 1
 	win.ZIndex = topZ
+	win.Visible = true
 end
 
 local function makeDraggable(win, handle)
@@ -313,23 +333,43 @@ local function createWindow(opts)
 	tl.ZIndex = 3
 	tl.Parent = bar
 
-	local close = Instance.new("TextButton")
-	close.AnchorPoint = Vector2.new(1, 0.5)
-	close.Position = UDim2.new(1, -10, 0.5, 0)
-	close.Size = UDim2.fromOffset(26, 26)
-	close.BackgroundColor3 = dark and Color3.fromRGB(40,45,58) or Color3.fromRGB(238, 240, 244)
-	close.Text = "✕"
-	close.Font = Enum.Font.GothamBold
-	close.TextSize = 13
-	close.TextColor3 = dark and C.darkText or C.muted
-	close.AutoButtonColor = true
-	close.ZIndex = 3
-	close.Parent = bar
-	corner(close, 13)
-	close.MouseEnter:Connect(function() close.BackgroundColor3 = C.red close.TextColor3 = Color3.fromRGB(255,255,255) end)
+	local baseCtrl = dark and Color3.fromRGB(40,45,58) or Color3.fromRGB(238, 240, 244)
+	local lineCol = dark and C.darkText or C.muted
+	local function ctrlBtn(offsetX)
+		local b = Instance.new("TextButton")
+		b.AnchorPoint = Vector2.new(1, 0.5)
+		b.Position = UDim2.new(1, offsetX, 0.5, 0)
+		b.Size = UDim2.fromOffset(26, 26)
+		b.BackgroundColor3 = baseCtrl
+		b.Text = ""
+		b.AutoButtonColor = false
+		b.ZIndex = 3
+		b.Parent = bar
+		corner(b, 13)
+		return b
+	end
+
+	-- minimize (real horizontal line)
+	local minB = ctrlBtn(-42)
+	local minLine = Instance.new("Frame")
+	minLine.AnchorPoint = Vector2.new(0.5, 0.5) minLine.Position = UDim2.fromScale(0.5, 0.5)
+	minLine.Size = UDim2.fromOffset(11, 2) minLine.BackgroundColor3 = lineCol minLine.BorderSizePixel = 0
+	minLine.ZIndex = 4 minLine.Parent = minB
+	local mlc = Instance.new("UICorner") mlc.CornerRadius = UDim.new(0, 1) mlc.Parent = minLine
+	minB.MouseEnter:Connect(function() minB.BackgroundColor3 = dark and Color3.fromRGB(58,64,80) or Color3.fromRGB(225,228,234) end)
+	minB.MouseLeave:Connect(function() minB.BackgroundColor3 = baseCtrl end)
+	minB.MouseButton1Click:Connect(function() win.Visible = false end)
+
+	-- close (real X drawn from two lines, turns red on hover)
+	local close = ctrlBtn(-10)
+	local xLines = addX(close, lineCol, 11)
+	close.MouseEnter:Connect(function()
+		close.BackgroundColor3 = C.red
+		for _, ln in ipairs(xLines) do ln.BackgroundColor3 = Color3.fromRGB(255,255,255) end
+	end)
 	close.MouseLeave:Connect(function()
-		close.BackgroundColor3 = dark and Color3.fromRGB(40,45,58) or Color3.fromRGB(238, 240, 244)
-		close.TextColor3 = dark and C.darkText or C.muted
+		close.BackgroundColor3 = baseCtrl
+		for _, ln in ipairs(xLines) do ln.BackgroundColor3 = lineCol end
 	end)
 
 	local content = Instance.new("Frame")
@@ -849,9 +889,11 @@ openBrowser = function()
 
 		local closeB = Instance.new("TextButton")
 		closeB.AnchorPoint = Vector2.new(1, 0.5) closeB.Position = UDim2.new(1, -8, 0.5, 0)
-		closeB.Size = UDim2.fromOffset(22, 22) closeB.BackgroundTransparency = 1 closeB.Text = "✕"
-		closeB.Font = Enum.Font.GothamBold closeB.TextSize = 13 closeB.TextColor3 = DT_MUT
+		closeB.Size = UDim2.fromOffset(22, 22) closeB.BackgroundTransparency = 1 closeB.Text = ""
 		closeB.ZIndex = 22 closeB.Parent = bar
+		local cbx = addX(closeB, DT_MUT, 11)
+		closeB.MouseEnter:Connect(function() for _, ln in ipairs(cbx) do ln.BackgroundColor3 = Color3.fromRGB(235,235,240) end end)
+		closeB.MouseLeave:Connect(function() for _, ln in ipairs(cbx) do ln.BackgroundColor3 = DT_MUT end end)
 		closeB.MouseButton1Click:Connect(function() destroyDev() end)
 
 		local function newScroll(parent)
@@ -889,8 +931,14 @@ openBrowser = function()
 				b.Font = Enum.Font.Code b.TextSize = 13 b.TextXAlignment = Enum.TextXAlignment.Left
 				b.TextColor3 = err and Color3.fromRGB(244, 135, 113) or warn and Color3.fromRGB(226, 192, 141)
 					or ln.lvl == "info" and Color3.fromRGB(156, 220, 254) or ln.lvl == "debug" and Color3.fromRGB(181, 206, 168) or DT_TXT
-				b.Text = "  " .. (err and "✖ " or warn and "⚠ " or "› ") .. ln.txt
+				b.Text = "      " .. ln.txt
 				b.LayoutOrder = i b.ZIndex = 21 b.Parent = sc
+				if err or warn then
+					local stripe = Instance.new("Frame")
+					stripe.Size = UDim2.new(0, 3, 1, 0) stripe.BorderSizePixel = 0
+					stripe.BackgroundColor3 = err and Color3.fromRGB(244, 90, 80) or Color3.fromRGB(226, 180, 90)
+					stripe.ZIndex = 22 stripe.Parent = b
+				end
 				if ln.token then b.MouseButton1Click:Connect(function() copyToClipboard(ln.token) end) end
 			end
 		end
@@ -900,7 +948,7 @@ openBrowser = function()
 			clearKids(holder)
 			local back = Instance.new("TextButton")
 			back.Position = UDim2.fromOffset(8, 6) back.Size = UDim2.fromOffset(70, 22)
-			back.BackgroundColor3 = DT_BAR back.Font = Enum.Font.Code back.Text = "← 뒤로"
+			back.BackgroundColor3 = DT_BAR back.Font = Enum.Font.Code back.Text = "< 뒤로"
 			back.TextColor3 = DT_TXT back.TextSize = 12 back.ZIndex = 22 back.Parent = holder corner(back, 6)
 			back.MouseButton1Click:Connect(function() renderNetwork(holder) end)
 			local title = Instance.new("TextLabel")
@@ -921,7 +969,7 @@ openBrowser = function()
 					e.MouseButton1Click:Connect(click)
 				end
 			end
-			addLine("▾ Response Headers / Body", DT_MUT)
+			addLine("Response  (Headers / Body)", DT_MUT)
 			for li, line in ipairs(row.resp) do
 				local isTok = row.tokenLine == li
 				addLine("  " .. line, isTok and Color3.fromRGB(140, 255, 170) or DT_TXT, isTok and function() copyToClipboard(row.token) end or nil)
