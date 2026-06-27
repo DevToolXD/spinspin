@@ -385,6 +385,8 @@ UserInputService.MouseBehavior    = Enum.MouseBehavior.Default
 local Clipboard = ""
 local money = 0
 local pwned = {}
+-- interactive tutorial (real implementation assigned later, after gui exists)
+local Tutorial = { notify = function() end, start = function() end }
 
 local function corner(inst, r)
 	local c = Instance.new("UICorner")
@@ -511,6 +513,7 @@ end
 local function copyToClipboard(token)
 	Clipboard = token
 	toast("📋 복사됨:  " .. token)
+	Tutorial.notify("tokenCopy")
 end
 
 ----------------------------------------------------------------------
@@ -579,6 +582,11 @@ local function createWindow(opts)
 	corner(win, 12)
 	stroke(win, dark and Color3.fromRGB(50,56,70) or C.line, 1)
 	raise(win)
+	-- subtle open animation
+	local us = Instance.new("UIScale")
+	us.Scale = 0.96
+	us.Parent = win
+	TweenService:Create(us, TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 
 	local bar = Instance.new("Frame")
 	bar.Name = "TitleBar"
@@ -813,6 +821,112 @@ for _, t in ipairs(TARGETS) do
 end
 
 ----------------------------------------------------------------------
+-- Interactive tutorial (guides the player while they play)
+----------------------------------------------------------------------
+do
+	local active, idx = false, 1
+	local bubble, txt, hl, hlTween
+	local steps = {
+		{ await = "browserOpen", text = "🌐 1/6  GOOGULE 앱을 여세요  (바탕화면 또는 아래 작업표시줄의 G)", hl = "Icon_GOOGULE" },
+		{ await = "siteVisit",   text = "🎯 2/6  '해킹 대상' 목록에서 사이트를 클릭해 접속하세요" },
+		{ await = "devOpen",     text = "🔧 3/6  F12 또는 '</> DevTools' 버튼으로 개발자 도구를 여세요" },
+		{ await = "tokenCopy",   text = "📋 4/6  Elements/Network/Console 탭에서 초록색 토큰을 클릭해 복사하세요" },
+		{ await = "hackOpen",    text = "💻 5/6  HackTool 앱을 여세요", hl = "Icon_HackTool" },
+		{ await = "exploitDone", text = "⚡ 6/6  대상 선택 → '붙여넣기' → 'EXPLOIT 실행'!" },
+	}
+
+	local function clearHL()
+		if hlTween then hlTween:Cancel() hlTween = nil end
+		if hl then hl:Destroy() hl = nil end
+	end
+	local function setHL(name)
+		clearHL()
+		local target = name and screen:FindFirstChild(name)
+		if not target then return end
+		hl = Instance.new("UIStroke")
+		hl.Color = Color3.fromRGB(255, 215, 70)
+		hl.Thickness = 3
+		hl.Parent = target
+		hlTween = TweenService:Create(hl, TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Transparency = 0.65 })
+		hlTween:Play()
+	end
+
+	local function ensureBubble()
+		if bubble then return end
+		bubble = Instance.new("Frame")
+		bubble.Name = "TutorialBubble"
+		bubble.AnchorPoint = Vector2.new(0.5, 1)
+		bubble.Position = UDim2.new(0.5, 0, 1, -72)
+		bubble.Size = UDim2.fromOffset(620, 50)
+		bubble.BackgroundColor3 = C.dark
+		bubble.BackgroundTransparency = 0.05
+		bubble.BorderSizePixel = 0
+		bubble.ZIndex = 66
+		bubble.Parent = gui
+		corner(bubble, 12)
+		stroke(bubble, C.accent, 1.5)
+		txt = Instance.new("TextLabel")
+		txt.BackgroundTransparency = 1
+		txt.Position = UDim2.fromOffset(16, 0)
+		txt.Size = UDim2.new(1, -90, 1, 0)
+		txt.Font = Enum.Font.GothamMedium
+		txt.TextColor3 = Color3.fromRGB(240, 244, 250)
+		txt.TextSize = 14
+		txt.TextXAlignment = Enum.TextXAlignment.Left
+		txt.TextWrapped = true
+		txt.ZIndex = 67
+		txt.Parent = bubble
+		local skip = Instance.new("TextButton")
+		skip.AnchorPoint = Vector2.new(1, 0.5)
+		skip.Position = UDim2.new(1, -10, 0.5, 0)
+		skip.Size = UDim2.fromOffset(64, 30)
+		skip.BackgroundColor3 = Color3.fromRGB(48, 52, 64)
+		skip.Font = Enum.Font.GothamMedium
+		skip.Text = "건너뛰기"
+		skip.TextColor3 = C.muted
+		skip.TextSize = 12
+		skip.ZIndex = 67
+		skip.Parent = bubble
+		corner(skip, 8)
+		skip.MouseButton1Click:Connect(function() Tutorial.skip() end)
+	end
+
+	local function render()
+		ensureBubble()
+		local s = steps[idx]
+		txt.Text = s.text
+		setHL(s.hl)
+	end
+
+	local function finish()
+		active = false
+		clearHL()
+		if bubble then
+			txt.Text = "🎉 튜토리얼 완료! 돈을 모아 더 큰 사이트를 해금하고 Shop·Decoder·Terminal도 써보세요."
+			local b = bubble
+			task.delay(5, function() if b then b:Destroy() end end)
+			bubble = nil
+		end
+	end
+
+	Tutorial.start = function()
+		active = true idx = 1 render()
+	end
+	Tutorial.skip = function()
+		active = false clearHL()
+		if bubble then bubble:Destroy() bubble = nil end
+	end
+	Tutorial.notify = function(ev)
+		if not active then return end
+		local s = steps[idx]
+		if s and s.await == ev then
+			idx += 1
+			if idx > #steps then finish() else render() end
+		end
+	end
+end
+
+----------------------------------------------------------------------
 -- Forward declarations
 ----------------------------------------------------------------------
 local openBrowser, openHackTool, openTutorial, openDecoder, openShop, openTerminal
@@ -838,6 +952,7 @@ openBrowser = function()
 	local win, content = createWindow({ title = "GOOGULE — 브라우저", w = 0.6, h = 0.72, x = 0.08, y = 0.06, accent = C.accent })
 	browserWin = win
 	win.Destroying:Connect(function() browserWin = nil browserDevToggle = nil end)
+	Tutorial.notify("browserOpen")
 
 	local currentSite, devOpen, devTab = nil, false, "Elements"
 
@@ -983,7 +1098,7 @@ openBrowser = function()
 	end
 
 	local function toggleDev()
-		if devOpen then destroyDev() else devOpen = true buildDev() end
+		if devOpen then destroyDev() else devOpen = true buildDev() Tutorial.notify("devOpen") end
 	end
 	browserDevToggle = toggleDev
 	devBtn.MouseButton1Click:Connect(toggleDev)
@@ -1100,6 +1215,7 @@ openBrowser = function()
 	showSite = function(t)
 		destroyDev() currentSite = t clearKids(page)
 		urlBar.Text = "  ⚠  " .. t.url
+		Tutorial.notify("siteVisit")
 		local scr = makeScroller(page)
 		scr.Size = UDim2.fromScale(1, 1) scr.ZIndex = 2
 		local lay = Instance.new("UIListLayout") lay.Padding = UDim.new(0, 0) lay.Parent = scr
@@ -1161,6 +1277,7 @@ openHackTool = function()
 	local win, content = createWindow({ title = "HackTool v2.0", w = 0.46, h = 0.66, x = 0.46, y = 0.12, dark = true, accent = C.green })
 	hackWin = win
 	win.Destroying:Connect(function() hackWin = nil end)
+	Tutorial.notify("hackOpen")
 
 	local M = 16
 	local hint = Instance.new("TextLabel")
@@ -1261,6 +1378,7 @@ openHackTool = function()
 				money += payout totalEarned += tgt.reward hacksDone += 1 updateMoneyHUD()
 				pwned[tgt.id] = true selected = nil refreshTargets()
 				toast("✅ " .. tgt.name .. " 해킹 성공!  +$" .. payout)
+				Tutorial.notify("exploitDone")
 			else
 				println("[-] ACCESS DENIED — 잘못된 토큰", Color3.fromRGB(255,110,110))
 				println("    DevTools에서 올바른 토큰을 다시 찾으세요.", Color3.fromRGB(200,150,90))
@@ -1623,7 +1741,7 @@ openTutorial = function()
 	local function closeTut() backdrop:Destroy() end
 	skip.MouseButton1Click:Connect(closeTut)
 	nextBtn.MouseButton1Click:Connect(function()
-		if idx >= #steps then closeTut() else idx += 1 render() end
+		if idx >= #steps then closeTut() Tutorial.start() else idx += 1 render() end
 	end)
 	render()
 end
