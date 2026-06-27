@@ -581,6 +581,467 @@ else
 end
 
 ----------------------------------------------------------------------
+-- Desktop environment: window manager + GOOGULE browser
+----------------------------------------------------------------------
+local function rounded(inst, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, r)
+	c.Parent = inst
+end
+
+local function clearChildren(f)
+	for _, c in ipairs(f:GetChildren()) do
+		c:Destroy()
+	end
+end
+
+local topZ = 10
+local function raise(win)
+	topZ += 1
+	win.ZIndex = topZ
+end
+
+local function makeDraggable(win, handle)
+	local dragging, startPos, startMouse
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			startMouse = input.Position
+			startPos = win.Position
+			raise(win)
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = input.Position - startMouse
+			win.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + d.X,
+				startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		end
+	end)
+end
+
+local function createWindow(title, wScale, hScale)
+	local win = Instance.new("Frame")
+	win.Name = "Window"
+	win.Size = UDim2.fromScale(wScale, hScale)
+	win.Position = UDim2.fromScale(0.14, 0.08)
+	win.BackgroundColor3 = Color3.fromRGB(248, 249, 251)
+	win.BorderSizePixel = 0
+	win.Parent = screen
+	rounded(win, 8)
+	raise(win)
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(50, 60, 80)
+	stroke.Thickness = 1
+	stroke.Parent = win
+
+	local bar = Instance.new("Frame")
+	bar.Name = "TitleBar"
+	bar.Size = UDim2.new(1, 0, 0, 34)
+	bar.BackgroundColor3 = Color3.fromRGB(44, 50, 62)
+	bar.BorderSizePixel = 0
+	bar.ZIndex = 2
+	bar.Parent = win
+	rounded(bar, 8)
+
+	local barFix = Instance.new("Frame")
+	barFix.Size = UDim2.new(1, 0, 0, 12)
+	barFix.Position = UDim2.new(0, 0, 1, -12)
+	barFix.BackgroundColor3 = bar.BackgroundColor3
+	barFix.BorderSizePixel = 0
+	barFix.ZIndex = 2
+	barFix.Parent = bar
+
+	local tl = Instance.new("TextLabel")
+	tl.BackgroundTransparency = 1
+	tl.Position = UDim2.fromOffset(12, 0)
+	tl.Size = UDim2.new(1, -90, 1, 0)
+	tl.Font = Enum.Font.GothamMedium
+	tl.Text = title
+	tl.TextColor3 = Color3.fromRGB(235, 240, 248)
+	tl.TextSize = 14
+	tl.TextXAlignment = Enum.TextXAlignment.Left
+	tl.ZIndex = 3
+	tl.Parent = bar
+
+	local close = Instance.new("TextButton")
+	close.AnchorPoint = Vector2.new(1, 0.5)
+	close.Position = UDim2.new(1, -8, 0.5, 0)
+	close.Size = UDim2.fromOffset(24, 24)
+	close.BackgroundColor3 = Color3.fromRGB(220, 70, 70)
+	close.Text = "X"
+	close.Font = Enum.Font.GothamBold
+	close.TextSize = 12
+	close.TextColor3 = Color3.fromRGB(255, 255, 255)
+	close.ZIndex = 3
+	close.Parent = bar
+	rounded(close, 6)
+
+	local content = Instance.new("Frame")
+	content.Name = "Content"
+	content.Position = UDim2.fromOffset(0, 34)
+	content.Size = UDim2.new(1, 0, 1, -34)
+	content.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	content.BorderSizePixel = 0
+	content.ClipsDescendants = true
+	content.ZIndex = 1
+	content.Parent = win
+
+	close.MouseButton1Click:Connect(function()
+		win:Destroy()
+	end)
+	win.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			raise(win)
+		end
+	end)
+	makeDraggable(win, bar)
+	return win, content
+end
+
+----------------------------------------------------------------------
+-- GOOGULE logo + fake search
+----------------------------------------------------------------------
+local GOOG_LETTERS = { "G", "O", "O", "G", "U", "L", "E" }
+local GOOG_COLORS = {
+	Color3.fromRGB(66, 133, 244),
+	Color3.fromRGB(219, 68, 55),
+	Color3.fromRGB(244, 180, 0),
+	Color3.fromRGB(66, 133, 244),
+	Color3.fromRGB(15, 157, 88),
+	Color3.fromRGB(219, 68, 55),
+	Color3.fromRGB(244, 180, 0),
+}
+
+local function buildLogo(parent, sizePx)
+	local holder = Instance.new("Frame")
+	holder.Name = "Logo"
+	holder.BackgroundTransparency = 1
+	holder.Size = UDim2.fromOffset(math.floor(sizePx * 5.2), sizePx)
+	holder.ZIndex = 3
+	holder.Parent = parent
+	local lay = Instance.new("UIListLayout")
+	lay.FillDirection = Enum.FillDirection.Horizontal
+	lay.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	lay.VerticalAlignment = Enum.VerticalAlignment.Center
+	lay.Parent = holder
+	for i, ch in ipairs(GOOG_LETTERS) do
+		local l = Instance.new("TextLabel")
+		l.BackgroundTransparency = 1
+		l.Size = UDim2.fromOffset(math.floor(sizePx * 0.72), sizePx)
+		l.Font = Enum.Font.FredokaOne
+		l.Text = ch
+		l.TextColor3 = GOOG_COLORS[i]
+		l.TextScaled = true
+		l.LayoutOrder = i
+		l.ZIndex = 3
+		l.Parent = holder
+	end
+	return holder
+end
+
+local function makeResults(q)
+	return {
+		{ u = "https://wiki.googule.com/" .. q,  t = q .. " - 구글 백과사전",  s = "'" .. q .. "' 에 대한 설명, 역사, 그리고 관련된 모든 정보를 한 곳에서 확인하세요." },
+		{ u = "https://" .. q .. ".com",          t = "[" .. q .. "] 공식 홈페이지", s = "공식 사이트입니다. 로그인 · 회원가입 · 서비스 안내 · 고객센터." },
+		{ u = "https://news.googule.com/" .. q,   t = q .. " 관련 최신 뉴스",   s = "지금 " .. q .. " 에 대해 사람들이 가장 많이 찾아본 소식들을 모았습니다." },
+		{ u = "https://shop.googule.com/" .. q,   t = q .. " 쇼핑 - 최저가",    s = q .. " 상품을 최저가로 비교하고 구매하세요. 무료배송 상품 다수." },
+		{ u = "https://video.googule.com/" .. q,  t = q .. " 동영상 모음",      s = "'" .. q .. "' 관련 인기 영상 1,204개. 지금 바로 재생하세요." },
+	}
+end
+
+local browserWin
+
+local function openBrowser()
+	if browserWin and browserWin.Parent then
+		raise(browserWin)
+		return
+	end
+
+	local win, content = createWindow("GOOGULE", 0.64, 0.70)
+	browserWin = win
+
+	-- Browser chrome (address bar)
+	local chrome = Instance.new("Frame")
+	chrome.Name = "Chrome"
+	chrome.Size = UDim2.new(1, 0, 0, 38)
+	chrome.BackgroundColor3 = Color3.fromRGB(236, 238, 242)
+	chrome.BorderSizePixel = 0
+	chrome.ZIndex = 2
+	chrome.Parent = content
+
+	local urlBar = Instance.new("TextLabel")
+	urlBar.AnchorPoint = Vector2.new(0, 0.5)
+	urlBar.Position = UDim2.new(0, 12, 0.5, 0)
+	urlBar.Size = UDim2.new(1, -24, 0, 26)
+	urlBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	urlBar.Font = Enum.Font.Gotham
+	urlBar.Text = "  🔒  googule.com"
+	urlBar.TextColor3 = Color3.fromRGB(70, 75, 85)
+	urlBar.TextSize = 13
+	urlBar.TextXAlignment = Enum.TextXAlignment.Left
+	urlBar.ZIndex = 3
+	urlBar.Parent = chrome
+	rounded(urlBar, 13)
+
+	-- Page area
+	local page = Instance.new("Frame")
+	page.Name = "Page"
+	page.Position = UDim2.fromOffset(0, 38)
+	page.Size = UDim2.new(1, 0, 1, -38)
+	page.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	page.BorderSizePixel = 0
+	page.ClipsDescendants = true
+	page.ZIndex = 1
+	page.Parent = content
+
+	local showHome, showResults
+
+	local function styleSearchBox(box)
+		box.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		box.Font = Enum.Font.Gotham
+		box.TextColor3 = Color3.fromRGB(40, 40, 40)
+		box.ClearTextOnFocus = false
+		rounded(box, 18)
+		local s = Instance.new("UIStroke")
+		s.Color = Color3.fromRGB(205, 210, 220)
+		s.Thickness = 1
+		s.Parent = box
+		local p = Instance.new("UIPadding")
+		p.PaddingLeft = UDim.new(0, 16)
+		p.PaddingRight = UDim.new(0, 16)
+		p.Parent = box
+	end
+
+	showHome = function()
+		clearChildren(page)
+		urlBar.Text = "  🔒  googule.com"
+
+		local logo = buildLogo(page, 70)
+		logo.AnchorPoint = Vector2.new(0.5, 0.5)
+		logo.Position = UDim2.fromScale(0.5, 0.26)
+
+		local box = Instance.new("TextBox")
+		box.AnchorPoint = Vector2.new(0.5, 0.5)
+		box.Position = UDim2.fromScale(0.5, 0.45)
+		box.Size = UDim2.fromScale(0.7, 0.085)
+		box.PlaceholderText = "GOOGULE 검색"
+		box.Text = ""
+		box.TextSize = 16
+		box.TextXAlignment = Enum.TextXAlignment.Left
+		box.ZIndex = 2
+		box.Parent = page
+		styleSearchBox(box)
+
+		local btn = Instance.new("TextButton")
+		btn.AnchorPoint = Vector2.new(0.5, 0.5)
+		btn.Position = UDim2.fromScale(0.5, 0.58)
+		btn.Size = UDim2.fromScale(0.26, 0.075)
+		btn.BackgroundColor3 = Color3.fromRGB(240, 242, 245)
+		btn.Font = Enum.Font.Gotham
+		btn.Text = "GOOGULE 검색"
+		btn.TextSize = 14
+		btn.TextColor3 = Color3.fromRGB(60, 60, 60)
+		btn.ZIndex = 2
+		btn.Parent = page
+		rounded(btn, 6)
+
+		local function go()
+			if box.Text ~= "" then
+				showResults(box.Text)
+			end
+		end
+		btn.MouseButton1Click:Connect(go)
+		box.FocusLost:Connect(function(enter)
+			if enter then go() end
+		end)
+	end
+
+	showResults = function(q)
+		clearChildren(page)
+		urlBar.Text = "  🔒  googule.com/search?q=" .. q
+
+		local top = Instance.new("Frame")
+		top.Size = UDim2.new(1, 0, 0, 60)
+		top.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		top.BorderSizePixel = 0
+		top.ZIndex = 2
+		top.Parent = page
+
+		local divider = Instance.new("Frame")
+		divider.Position = UDim2.new(0, 0, 1, -1)
+		divider.Size = UDim2.new(1, 0, 0, 1)
+		divider.BackgroundColor3 = Color3.fromRGB(225, 228, 233)
+		divider.BorderSizePixel = 0
+		divider.ZIndex = 2
+		divider.Parent = top
+
+		local logo = buildLogo(top, 24)
+		logo.Position = UDim2.fromOffset(20, 18)
+
+		local box = Instance.new("TextBox")
+		box.Position = UDim2.fromOffset(190, 14)
+		box.Size = UDim2.new(0, 360, 0, 32)
+		box.Text = q
+		box.TextSize = 15
+		box.TextXAlignment = Enum.TextXAlignment.Left
+		box.ZIndex = 3
+		box.Parent = top
+		styleSearchBox(box)
+		box.FocusLost:Connect(function(enter)
+			if enter and box.Text ~= "" then
+				showResults(box.Text)
+			end
+		end)
+
+		local scroller = Instance.new("ScrollingFrame")
+		scroller.Position = UDim2.fromOffset(0, 60)
+		scroller.Size = UDim2.new(1, 0, 1, -60)
+		scroller.BackgroundTransparency = 1
+		scroller.BorderSizePixel = 0
+		scroller.ScrollBarThickness = 6
+		scroller.CanvasSize = UDim2.new()
+		scroller.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		scroller.ZIndex = 2
+		scroller.Parent = page
+
+		local lay = Instance.new("UIListLayout")
+		lay.Padding = UDim.new(0, 20)
+		lay.Parent = scroller
+		local lpad = Instance.new("UIPadding")
+		lpad.PaddingTop = UDim.new(0, 16)
+		lpad.PaddingLeft = UDim.new(0, 32)
+		lpad.PaddingRight = UDim.new(0, 32)
+		lpad.PaddingBottom = UDim.new(0, 16)
+		lpad.Parent = scroller
+
+		local count = Instance.new("TextLabel")
+		count.BackgroundTransparency = 1
+		count.Size = UDim2.new(1, 0, 0, 16)
+		count.Font = Enum.Font.Gotham
+		count.TextSize = 12
+		count.TextColor3 = Color3.fromRGB(120, 125, 130)
+		count.TextXAlignment = Enum.TextXAlignment.Left
+		count.Text = "'" .. q .. "' 에 대한 검색결과 약 1,230,000개"
+		count.LayoutOrder = 0
+		count.ZIndex = 2
+		count.Parent = scroller
+
+		for i, r in ipairs(makeResults(q)) do
+			local row = Instance.new("Frame")
+			row.BackgroundTransparency = 1
+			row.Size = UDim2.new(1, 0, 0, 74)
+			row.LayoutOrder = i
+			row.ZIndex = 2
+			row.Parent = scroller
+
+			local url = Instance.new("TextLabel")
+			url.BackgroundTransparency = 1
+			url.Size = UDim2.new(1, 0, 0, 16)
+			url.Font = Enum.Font.Gotham
+			url.TextSize = 12
+			url.TextColor3 = Color3.fromRGB(30, 120, 40)
+			url.TextXAlignment = Enum.TextXAlignment.Left
+			url.TextTruncate = Enum.TextTruncate.AtEnd
+			url.Text = r.u
+			url.ZIndex = 2
+			url.Parent = row
+
+			local title = Instance.new("TextButton")
+			title.BackgroundTransparency = 1
+			title.Position = UDim2.fromOffset(0, 16)
+			title.Size = UDim2.new(1, 0, 0, 24)
+			title.Font = Enum.Font.GothamMedium
+			title.TextSize = 18
+			title.TextColor3 = Color3.fromRGB(26, 90, 200)
+			title.TextXAlignment = Enum.TextXAlignment.Left
+			title.TextTruncate = Enum.TextTruncate.AtEnd
+			title.Text = r.t
+			title.ZIndex = 2
+			title.Parent = row
+
+			local snip = Instance.new("TextLabel")
+			snip.BackgroundTransparency = 1
+			snip.Position = UDim2.fromOffset(0, 42)
+			snip.Size = UDim2.new(1, 0, 0, 32)
+			snip.Font = Enum.Font.Gotham
+			snip.TextSize = 13
+			snip.TextColor3 = Color3.fromRGB(90, 95, 100)
+			snip.TextXAlignment = Enum.TextXAlignment.Left
+			snip.TextYAlignment = Enum.TextYAlignment.Top
+			snip.TextWrapped = true
+			snip.Text = r.s
+			snip.ZIndex = 2
+			snip.Parent = row
+		end
+	end
+
+	showHome()
+end
+
+----------------------------------------------------------------------
+-- Desktop icons
+----------------------------------------------------------------------
+local function makeIcon(label, index, letter, letterColor, onOpen)
+	local btn = Instance.new("TextButton")
+	btn.Name = "Icon_" .. label
+	btn.AutoButtonColor = false
+	btn.BackgroundTransparency = 1
+	btn.Text = ""
+	btn.Size = UDim2.fromOffset(86, 96)
+	btn.Position = UDim2.fromOffset(18, 18 + (index - 1) * 108)
+	btn.ZIndex = 6
+	btn.Parent = screen
+
+	local ico = Instance.new("Frame")
+	ico.AnchorPoint = Vector2.new(0.5, 0)
+	ico.Position = UDim2.fromScale(0.5, 0)
+	ico.Size = UDim2.fromOffset(62, 62)
+	ico.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	ico.ZIndex = 6
+	ico.Parent = btn
+	rounded(ico, 16)
+
+	local g = Instance.new("TextLabel")
+	g.BackgroundTransparency = 1
+	g.AnchorPoint = Vector2.new(0.5, 0.5)
+	g.Position = UDim2.fromScale(0.5, 0.5)
+	g.Size = UDim2.fromScale(0.72, 0.72)
+	g.Font = Enum.Font.FredokaOne
+	g.Text = letter
+	g.TextColor3 = letterColor
+	g.TextScaled = true
+	g.ZIndex = 7
+	g.Parent = ico
+
+	local lbl = Instance.new("TextLabel")
+	lbl.BackgroundTransparency = 1
+	lbl.Position = UDim2.fromOffset(0, 64)
+	lbl.Size = UDim2.new(1, 0, 0, 28)
+	lbl.Font = Enum.Font.GothamMedium
+	lbl.Text = label
+	lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+	lbl.TextStrokeTransparency = 0.4
+	lbl.TextSize = 14
+	lbl.ZIndex = 7
+	lbl.Parent = btn
+
+	btn.MouseButton1Click:Connect(onOpen)
+end
+
+makeIcon("GOOGULE", 1, "G", Color3.fromRGB(66, 133, 244), openBrowser)
+
+----------------------------------------------------------------------
 -- Power-on overlay (covers everything, fades on boot)
 ----------------------------------------------------------------------
 local powerOverlay = Instance.new("Frame")
