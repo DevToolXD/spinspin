@@ -9,7 +9,19 @@
 | --- | --- |
 | `HackSimInstaller.plugin.lua` | **이걸 설치하세요.** 아래 두 스크립트를 게임에 자동 설치/재설치하는 Studio 플러그인. 코드가 내장되어 있어 이 파일 하나면 됩니다. |
 | `HackSimLoadingScreen.client.lua` | 로딩 화면 LocalScript 원본 (읽기/수정용 참고본). → `ReplicatedFirst` 에 설치됨 |
-| `HackSimDesktop.client.lua` | PC 부팅 + 바탕화면 LocalScript 원본 (읽기/수정용 참고본). → `StarterPlayerScripts` 에 설치됨 |
+| `HackSimDesktop.client.lua` | PC 부팅 + 바탕화면 + 게임플레이 LocalScript 원본. → `StarterPlayerScripts` 에 설치됨 |
+| `HackSimServer.server.lua` | 서버 저장(DataStore) + 해킹/구매 검증(안티치트) Script 원본. → `ServerScriptService` 에 설치됨 |
+
+## 서버 저장 + 안티치트 (HackSimServer)
+
+돈/진행도/업그레이드는 **서버가 관리·검증**하고 **DataStore에 저장**됩니다.
+클라이언트는 토큰만 서버로 보내고, 서버가 정답/해금/중복을 확인한 뒤 보상을
+지급합니다 (클라이언트가 돈을 직접 못 올림).
+
+> ⚠️ DataStore는 **게시된(Published) 게임** 또는 Studio의
+> **Game Settings → Security → Enable Studio Access to API Services** 가 켜져
+> 있어야 작동합니다. 꺼져 있어도 게임은 돌아가지만 저장은 안 됩니다.
+> 서버 스크립트가 없을 때는 클라이언트가 자동으로 로컬 모드로 폴백합니다.
 
 ## 스폰 후 PC 부팅 화면 (HackSimDesktop)
 

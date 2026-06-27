@@ -621,6 +621,69 @@ local openBrowser, openHackTool, openTutorial, openDecoder, openShop, openTermin
 local updateMoneyHUD
 
 ----------------------------------------------------------------------
+-- Server link (DataStore save/load + server-side hack validation).
+-- If no server is present (e.g. quick local test), falls back to local.
+----------------------------------------------------------------------
+local Net = { online = false }
+
+local function attemptHack(tgt, key)
+	if Net.online then
+		local res
+		local ok = pcall(function() res = Net.hack:InvokeServer(tgt.id, key) end)
+		if ok and type(res) == "table" and res.ok then
+			return true, res.payout, res.money, res.totalEarned
+		end
+		return false
+	else
+		if key == tgt.secret then
+			local payout = math.floor(tgt.reward * upg.mult)
+			money += payout totalEarned += tgt.reward
+			return true, payout, money, totalEarned
+		end
+		return false
+	end
+end
+
+local function attemptBuy(key, cost, applyLocal)
+	if Net.online then
+		local res
+		local ok = pcall(function() res = Net.buy:InvokeServer(key) end)
+		if ok and type(res) == "table" and res.ok then
+			money = res.money
+			if type(res.upg) == "table" then upg = res.upg end
+			return true
+		end
+		return false
+	else
+		if money >= cost then
+			money -= cost applyLocal()
+			return true
+		end
+		return false
+	end
+end
+
+task.spawn(function()
+	local RS = game:GetService("ReplicatedStorage")
+	local folder = RS:FindFirstChild("HackSimNet") or RS:WaitForChild("HackSimNet", 6)
+	if not folder then return end
+	local g = folder:WaitForChild("GetData", 4)
+	local h = folder:WaitForChild("Hack", 4)
+	local b = folder:WaitForChild("Buy", 4)
+	if not (g and h and b) then return end
+	Net.get, Net.hack, Net.buy = g, h, b
+	Net.online = true
+	local ok, prof = pcall(function() return g:InvokeServer() end)
+	if ok and type(prof) == "table" then
+		money = prof.money or money
+		totalEarned = prof.totalEarned or totalEarned
+		if type(prof.pwned) == "table" then pwned = prof.pwned end
+		if type(prof.upg) == "table" then upg = prof.upg end
+		if updateMoneyHUD then updateMoneyHUD() end
+	end
+end)
+
+----------------------------------------------------------------------
 -- GOOGULE Browser
 ----------------------------------------------------------------------
 local browserWin, browserDevToggle
@@ -1059,18 +1122,18 @@ openHackTool = function()
 			println("[*] key    : " .. (key ~= "" and key or "(없음)"), C.muted) task.wait(0.3*sp)
 			println("[*] injecting payload ...", C.muted) task.wait(0.45*sp)
 			println("[*] bypassing firewall ...", C.muted) task.wait(0.45*sp)
-			if key == tgt.secret then
-				local payout = math.floor(tgt.reward * upg.mult)
+			local okHack, payout, newMoney, newTotal = attemptHack(tgt, key)
+			if okHack then
 				println("[+] ACCESS GRANTED", C.termGrn)
 				println("[+] 입금 +$" .. payout, C.termGrn)
-				money += payout totalEarned += tgt.reward hacksDone += 1 updateMoneyHUD()
+				money = newMoney totalEarned = newTotal hacksDone += 1 updateMoneyHUD()
 				pwned[tgt.id] = true selected = nil refreshTargets()
 				toast("✅ " .. tgt.name .. " 해킹 성공!  +$" .. payout)
 				Tutorial.notify("exploitDone")
 			else
-				println("[-] ACCESS DENIED — 잘못된 토큰", Color3.fromRGB(255,110,110))
+				println("[-] ACCESS DENIED — 잘못된 토큰/조건", Color3.fromRGB(255,110,110))
 				println("    DevTools에서 올바른 토큰을 다시 찾으세요.", Color3.fromRGB(200,150,90))
-				toast("❌ 토큰이 틀렸어요")
+				toast("❌ 실패 — 토큰을 확인하세요")
 			end
 			running = false runBtn.Text = "⚡ EXPLOIT 실행" runBtn.BackgroundColor3 = C.green
 		end)
@@ -1181,11 +1244,11 @@ openShop = function()
 				buy.Text = "$" .. it.cost buy.BackgroundColor3 = C.green buy.TextColor3 = Color3.fromRGB(255,255,255)
 				buy.MouseButton1Click:Connect(function()
 					if it.owned() then return end
-					if money >= it.cost then
-						money -= it.cost it.apply() updateMoneyHUD()
+					if attemptBuy(it.key, it.cost, it.apply) then
+						updateMoneyHUD()
 						toast("✅ 구매 완료: " .. it.name) render()
 					else
-						toast("💸 돈이 부족해요 ($" .. it.cost .. " 필요)")
+						toast("💸 구매 실패 — 돈 부족 또는 이미 보유")
 					end
 				end)
 			end

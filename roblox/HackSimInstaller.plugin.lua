@@ -4,8 +4,9 @@
 --  WHAT IT DOES
 --    Adds a "SPINSPIN HackSim" toolbar to Roblox Studio with two buttons:
 --      • Install / Reinstall  — removes any previous copy, then installs fresh:
---          - ReplicatedFirst/HackSimLoading       (hacker loading screen)
---          - StarterPlayerScripts/HackSimDesktop   (PC boot + desktop wallpaper)
+--          - ReplicatedFirst/HackSimLoading        (hacker loading screen)
+--          - StarterPlayerScripts/HackSimDesktop    (PC boot + desktop + gameplay)
+--          - ServerScriptService/HackSimServer      (DataStore save + anti-cheat)
 --      • Uninstall            — removes everything the plugin installed.
 --
 --  IDEMPOTENT BY DESIGN
@@ -30,6 +31,7 @@ local CollectionService    = game:GetService("CollectionService")
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local ReplicatedFirst      = game:GetService("ReplicatedFirst")
 local StarterPlayer        = game:GetService("StarterPlayer")
+local ServerScriptService  = game:GetService("ServerScriptService")
 
 local INSTALL_TAG = "HackSimInstalled"
 
@@ -933,6 +935,69 @@ local openBrowser, openHackTool, openTutorial, openDecoder, openShop, openTermin
 local updateMoneyHUD
 
 ----------------------------------------------------------------------
+-- Server link (DataStore save/load + server-side hack validation).
+-- If no server is present (e.g. quick local test), falls back to local.
+----------------------------------------------------------------------
+local Net = { online = false }
+
+local function attemptHack(tgt, key)
+	if Net.online then
+		local res
+		local ok = pcall(function() res = Net.hack:InvokeServer(tgt.id, key) end)
+		if ok and type(res) == "table" and res.ok then
+			return true, res.payout, res.money, res.totalEarned
+		end
+		return false
+	else
+		if key == tgt.secret then
+			local payout = math.floor(tgt.reward * upg.mult)
+			money += payout totalEarned += tgt.reward
+			return true, payout, money, totalEarned
+		end
+		return false
+	end
+end
+
+local function attemptBuy(key, cost, applyLocal)
+	if Net.online then
+		local res
+		local ok = pcall(function() res = Net.buy:InvokeServer(key) end)
+		if ok and type(res) == "table" and res.ok then
+			money = res.money
+			if type(res.upg) == "table" then upg = res.upg end
+			return true
+		end
+		return false
+	else
+		if money >= cost then
+			money -= cost applyLocal()
+			return true
+		end
+		return false
+	end
+end
+
+task.spawn(function()
+	local RS = game:GetService("ReplicatedStorage")
+	local folder = RS:FindFirstChild("HackSimNet") or RS:WaitForChild("HackSimNet", 6)
+	if not folder then return end
+	local g = folder:WaitForChild("GetData", 4)
+	local h = folder:WaitForChild("Hack", 4)
+	local b = folder:WaitForChild("Buy", 4)
+	if not (g and h and b) then return end
+	Net.get, Net.hack, Net.buy = g, h, b
+	Net.online = true
+	local ok, prof = pcall(function() return g:InvokeServer() end)
+	if ok and type(prof) == "table" then
+		money = prof.money or money
+		totalEarned = prof.totalEarned or totalEarned
+		if type(prof.pwned) == "table" then pwned = prof.pwned end
+		if type(prof.upg) == "table" then upg = prof.upg end
+		if updateMoneyHUD then updateMoneyHUD() end
+	end
+end)
+
+----------------------------------------------------------------------
 -- GOOGULE Browser
 ----------------------------------------------------------------------
 local browserWin, browserDevToggle
@@ -1371,18 +1436,18 @@ openHackTool = function()
 			println("[*] key    : " .. (key ~= "" and key or "(없음)"), C.muted) task.wait(0.3*sp)
 			println("[*] injecting payload ...", C.muted) task.wait(0.45*sp)
 			println("[*] bypassing firewall ...", C.muted) task.wait(0.45*sp)
-			if key == tgt.secret then
-				local payout = math.floor(tgt.reward * upg.mult)
+			local okHack, payout, newMoney, newTotal = attemptHack(tgt, key)
+			if okHack then
 				println("[+] ACCESS GRANTED", C.termGrn)
 				println("[+] 입금 +$" .. payout, C.termGrn)
-				money += payout totalEarned += tgt.reward hacksDone += 1 updateMoneyHUD()
+				money = newMoney totalEarned = newTotal hacksDone += 1 updateMoneyHUD()
 				pwned[tgt.id] = true selected = nil refreshTargets()
 				toast("✅ " .. tgt.name .. " 해킹 성공!  +$" .. payout)
 				Tutorial.notify("exploitDone")
 			else
-				println("[-] ACCESS DENIED — 잘못된 토큰", Color3.fromRGB(255,110,110))
+				println("[-] ACCESS DENIED — 잘못된 토큰/조건", Color3.fromRGB(255,110,110))
 				println("    DevTools에서 올바른 토큰을 다시 찾으세요.", Color3.fromRGB(200,150,90))
-				toast("❌ 토큰이 틀렸어요")
+				toast("❌ 실패 — 토큰을 확인하세요")
 			end
 			running = false runBtn.Text = "⚡ EXPLOIT 실행" runBtn.BackgroundColor3 = C.green
 		end)
@@ -1493,11 +1558,11 @@ openShop = function()
 				buy.Text = "$" .. it.cost buy.BackgroundColor3 = C.green buy.TextColor3 = Color3.fromRGB(255,255,255)
 				buy.MouseButton1Click:Connect(function()
 					if it.owned() then return end
-					if money >= it.cost then
-						money -= it.cost it.apply() updateMoneyHUD()
+					if attemptBuy(it.key, it.cost, it.apply) then
+						updateMoneyHUD()
 						toast("✅ 구매 완료: " .. it.name) render()
 					else
-						toast("💸 돈이 부족해요 ($" .. it.cost .. " 필요)")
+						toast("💸 구매 실패 — 돈 부족 또는 이미 보유")
 					end
 				end)
 			end
@@ -1785,6 +1850,172 @@ end)
 ]=]
 
 ----------------------------------------------------------------------
+-- Server source (-> ServerScriptService, save + anti-cheat)
+----------------------------------------------------------------------
+local SERVER_SOURCE = [=[
+--!nonstrict
+-- ============================================================================
+--  SPINSPIN :: HACK SIMULATOR — Server (save/load + anti-cheat)
+--  Location: ServerScriptService (Script)
+--  Auto-installed by the HackSim Installer plugin. Edit here, then reinstall.
+--
+--  Validates every hack/purchase on the server (clients never set their own
+--  money) and persists each player's progress with DataStore.
+--  NOTE: DataStore needs a PUBLISHED game, or Studio "Enable Studio Access to
+--  API Services" ON. Without it, the game still runs (just not saved).
+-- ============================================================================
+
+local Players              = game:GetService("Players")
+local ReplicatedStorage    = game:GetService("ReplicatedStorage")
+local DataStoreService     = game:GetService("DataStoreService")
+
+local store
+pcall(function() store = DataStoreService:GetDataStore("HackSimSave_v1") end)
+
+-- Secrets live ONLY on the server (must match the client TARGETS plain values)
+local TARGETS = {
+	freerobux  = { reward = 200,  unlockAt = 0,    secret = "sk_live_8842XQ" },
+	databank   = { reward = 350,  unlockAt = 0,    secret = "BANKTOKEN-7741" },
+	school     = { reward = 600,  unlockAt = 600,  secret = "md5:9af3c12e" },
+	cryptomine = { reward = 850,  unlockAt = 900,  secret = "MINEKEY-5521" },
+	gamevault  = { reward = 1000, unlockAt = 900,  secret = "VAULT_PASS_77" },
+	citypower  = { reward = 1500, unlockAt = 3000, secret = "GRID-ADMIN-9" },
+	megacorp   = { reward = 2000, unlockAt = 3000, secret = "CORP-ROOT-X1" },
+	darkmarket = { reward = 2500, unlockAt = 3000, secret = "btc:1A2b3C4d" },
+	satellite  = { reward = 3500, unlockAt = 8000, secret = "SAT-LINK-4420" },
+	mainframe  = { reward = 6000, unlockAt = 8000, secret = "ROOT@MAINFRAME9" },
+}
+
+local UPGRADES = {
+	mult  = { cost = 800 },
+	speed = { cost = 600 },
+	hint  = { cost = 400 },
+}
+
+-- Remotes
+local folder = Instance.new("Folder")
+folder.Name = "HackSimNet"
+folder.Parent = ReplicatedStorage
+local function makeRF(name)
+	local rf = Instance.new("RemoteFunction")
+	rf.Name = name
+	rf.Parent = folder
+	return rf
+end
+local getRF  = makeRF("GetData")
+local hackRF = makeRF("Hack")
+local buyRF  = makeRF("Buy")
+
+-- Profiles (in memory; persisted to DataStore)
+local data = {}
+
+local function defaultProfile()
+	return { money = 0, totalEarned = 0, pwned = {}, upg = { mult = 1, speed = 1, hint = false } }
+end
+
+local function keyFor(plr) return "plr_" .. plr.UserId end
+
+local function loadProfile(plr)
+	local prof = defaultProfile()
+	if store then
+		local ok, saved = pcall(function() return store:GetAsync(keyFor(plr)) end)
+		if ok and type(saved) == "table" then
+			prof.money       = tonumber(saved.money) or 0
+			prof.totalEarned = tonumber(saved.totalEarned) or 0
+			prof.pwned       = type(saved.pwned) == "table" and saved.pwned or {}
+			if type(saved.upg) == "table" then
+				prof.upg.mult  = tonumber(saved.upg.mult) or 1
+				prof.upg.speed = tonumber(saved.upg.speed) or 1
+				prof.upg.hint  = saved.upg.hint == true
+			end
+		end
+	end
+	data[plr.UserId] = prof
+end
+
+local function saveProfile(plr)
+	if not store then return end
+	local prof = data[plr.UserId]
+	if not prof then return end
+	pcall(function()
+		store:SetAsync(keyFor(plr), {
+			money = prof.money, totalEarned = prof.totalEarned,
+			pwned = prof.pwned, upg = prof.upg,
+		})
+	end)
+end
+
+Players.PlayerAdded:Connect(loadProfile)
+Players.PlayerRemoving:Connect(function(plr)
+	saveProfile(plr)
+	data[plr.UserId] = nil
+end)
+for _, plr in ipairs(Players:GetPlayers()) do loadProfile(plr) end
+
+-- periodic autosave
+task.spawn(function()
+	while true do
+		task.wait(60)
+		for _, plr in ipairs(Players:GetPlayers()) do saveProfile(plr) end
+	end
+end)
+game:BindToClose(function()
+	for _, plr in ipairs(Players:GetPlayers()) do saveProfile(plr) end
+end)
+
+-- Simple per-player rate limit
+local lastCall = {}
+local function rateOk(plr)
+	local now = os.clock()
+	local t = lastCall[plr.UserId] or 0
+	if now - t < 0.25 then return false end
+	lastCall[plr.UserId] = now
+	return true
+end
+
+getRF.OnServerInvoke = function(plr)
+	return data[plr.UserId] or defaultProfile()
+end
+
+hackRF.OnServerInvoke = function(plr, id, token)
+	local prof = data[plr.UserId]
+	if not prof or not rateOk(plr) then return { ok = false } end
+	if type(id) ~= "string" then return { ok = false } end
+	local t = TARGETS[id]
+	if not t then return { ok = false, err = "unknown" } end
+	if prof.totalEarned < (t.unlockAt or 0) then return { ok = false, err = "locked" } end
+	if prof.pwned[id] then return { ok = false, err = "done" } end
+	if tostring(token) ~= t.secret then return { ok = false, err = "bad" } end
+	local payout = math.floor(t.reward * (prof.upg.mult or 1))
+	prof.money = prof.money + payout
+	prof.totalEarned = prof.totalEarned + t.reward
+	prof.pwned[id] = true
+	saveProfile(plr)
+	return { ok = true, payout = payout, money = prof.money, totalEarned = prof.totalEarned }
+end
+
+buyRF.OnServerInvoke = function(plr, key)
+	local prof = data[plr.UserId]
+	if not prof or not rateOk(plr) then return { ok = false } end
+	local u = UPGRADES[key]
+	if not u then return { ok = false, err = "unknown" } end
+	local owned = (key == "mult" and prof.upg.mult > 1)
+		or (key == "speed" and prof.upg.speed < 1)
+		or (key == "hint" and prof.upg.hint)
+	if owned then return { ok = false, err = "owned" } end
+	if prof.money < u.cost then return { ok = false, err = "poor" } end
+	prof.money = prof.money - u.cost
+	if key == "mult" then prof.upg.mult = 1.5
+	elseif key == "speed" then prof.upg.speed = 0.5
+	elseif key == "hint" then prof.upg.hint = true end
+	saveProfile(plr)
+	return { ok = true, money = prof.money, upg = prof.upg }
+end
+
+print("[HackSim] Server ready (save + anti-cheat). DataStore: " .. (store and "ON" or "OFF (no API access)"))
+]=]
+
+----------------------------------------------------------------------
 -- Resolve install targets (containers must exist before parenting)
 ----------------------------------------------------------------------
 local function getStarterPlayerScripts()
@@ -1800,12 +2031,14 @@ local function getTargets()
 	return {
 		ReplicatedFirst = ReplicatedFirst,
 		StarterPlayerScripts = getStarterPlayerScripts(),
+		ServerScriptService = ServerScriptService,
 	}
 end
 
 local MODULES = {
-	{ name = "HackSimLoading", target = "ReplicatedFirst",      source = LOADING_SOURCE },
-	{ name = "HackSimDesktop", target = "StarterPlayerScripts", source = DESKTOP_SOURCE },
+	{ name = "HackSimLoading", target = "ReplicatedFirst",      source = LOADING_SOURCE, class = "LocalScript" },
+	{ name = "HackSimDesktop", target = "StarterPlayerScripts", source = DESKTOP_SOURCE, class = "LocalScript" },
+	{ name = "HackSimServer",  target = "ServerScriptService",  source = SERVER_SOURCE,  class = "Script" },
 }
 
 ----------------------------------------------------------------------
@@ -1848,7 +2081,7 @@ local function install()
 
 	local ok, err = pcall(function()
 		for _, m in ipairs(MODULES) do
-			local ls = Instance.new("LocalScript")
+			local ls = Instance.new(m.class or "LocalScript")
 			ls.Name = m.name
 			ls.Source = m.source -- needs Script Injection permission
 			CollectionService:AddTag(ls, INSTALL_TAG)
@@ -1864,7 +2097,7 @@ local function install()
 	end
 
 	if ok then
-		print(("[HackSim] OK - installed loading screen + desktop (removed %d old item(s))."):format(removed))
+		print(("[HackSim] OK - installed loading screen + desktop + server (removed %d old item(s))."):format(removed))
 	else
 		warn("[HackSim] FAILED to install: " .. tostring(err))
 		warn("[HackSim] If this is a permission error, allow 'Script Injection' for this plugin, then press Install again.")
