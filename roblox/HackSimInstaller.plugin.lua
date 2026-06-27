@@ -3,14 +3,15 @@
 -- ----------------------------------------------------------------------------
 --  WHAT IT DOES
 --    Adds a "SPINSPIN HackSim" toolbar to Roblox Studio with two buttons:
---      • Install / Reinstall  — removes any previous copy, then installs a fresh
---                               hacking-themed loading screen into ReplicatedFirst.
+--      • Install / Reinstall  — removes any previous copy, then installs fresh:
+--          - ReplicatedFirst/HackSimLoading       (hacker loading screen)
+--          - StarterPlayerScripts/HackSimDesktop   (PC boot + desktop wallpaper)
 --      • Uninstall            — removes everything the plugin installed.
 --
 --  IDEMPOTENT BY DESIGN
 --    Every instance this plugin creates is tagged with "HackSimInstalled".
 --    On each install it first destroys all tagged instances (plus any leftover
---    by name), so pressing Install again always gives you a clean reinstall.
+--    by name), so pressing Install again always gives a clean reinstall.
 --
 --  HOW TO INSTALL THIS PLUGIN
 --    1) Roblox Studio → "PLUGINS" tab → "Plugins Folder".
@@ -20,20 +21,21 @@
 --       and choose "Save as Local Plugin...".
 --
 --  NOTE ON PERMISSIONS
---    Installing writes a LocalScript's source code, so Studio will ask this
---    plugin for "Script Injection" permission the first time. Click Allow,
---    then press Install again.
+--    Installing writes LocalScript source code, so Studio will ask this plugin
+--    for "Script Injection" permission the first time. Click Allow, then press
+--    Install again.
 -- ============================================================================
 
-local ReplicatedFirst      = game:GetService("ReplicatedFirst")
 local CollectionService    = game:GetService("CollectionService")
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local ReplicatedFirst      = game:GetService("ReplicatedFirst")
+local StarterPlayer        = game:GetService("StarterPlayer")
 
 local INSTALL_TAG = "HackSimInstalled"
-local SCRIPT_NAME = "HackSimLoading"
 
--- The loading-screen LocalScript source that gets injected into ReplicatedFirst.
--- (Keep in sync with roblox/HackSimLoadingScreen.client.lua)
+----------------------------------------------------------------------
+-- Loading screen source (-> ReplicatedFirst)
+----------------------------------------------------------------------
 local LOADING_SOURCE = [=[
 --!nonstrict
 -- SPINSPIN :: HACK SIMULATOR — Custom Loading Screen (auto-installed)
@@ -305,6 +307,158 @@ gui:Destroy()
 ]=]
 
 ----------------------------------------------------------------------
+-- PC boot + desktop source (-> StarterPlayerScripts)
+----------------------------------------------------------------------
+local DESKTOP_SOURCE = [=[
+--!nonstrict
+-- SPINSPIN :: HACK SIMULATOR — PC Boot + Desktop (auto-installed)
+-- Location: StarterPlayer > StarterPlayerScripts (LocalScript). Edit via plugin.
+
+local Players          = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local StarterGui       = game:GetService("StarterGui")
+local TweenService     = game:GetService("TweenService")
+local SoundService     = game:GetService("SoundService")
+
+-- ===================== CONFIG =====================
+-- Roblox 오디오 정책상 "본인이 업로드(소유)한" 사운드만 재생됩니다.
+-- 옛날 윈도우 시작음을 본인 계정으로 업로드한 뒤, asset id를 여기에 넣으세요.
+local BOOT_SOUND_ID     = "rbxassetid://0"   -- TODO: 본인이 올린 시작음 id로 교체
+local BOOT_SOUND_VOLUME = 0.5
+local WALLPAPER_IMAGE_ID = ""                -- 예: "rbxassetid://1234567890"
+local POWER_ON_DELAY = 0.6
+local POWER_ON_FADE  = 1.2
+-- ==================================================
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local function freezeCharacter(character)
+	task.spawn(function()
+		local hum = character:WaitForChild("Humanoid", 10)
+		local root = character:WaitForChild("HumanoidRootPart", 10)
+		if hum then
+			hum.WalkSpeed = 0
+			hum.JumpPower = 0
+			pcall(function() hum.JumpHeight = 0 end)
+			hum.AutoRotate = false
+		end
+		if root then
+			root.Anchored = true
+		end
+	end)
+end
+
+if player.Character then
+	freezeCharacter(player.Character)
+end
+player.CharacterAdded:Connect(freezeCharacter)
+
+pcall(function()
+	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+end)
+
+UserInputService.MouseIconEnabled = true
+UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "PC_OS"
+gui.IgnoreGuiInset = true
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 50
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = playerGui
+
+local desktop = Instance.new("Frame")
+desktop.Name = "Desktop"
+desktop.Size = UDim2.fromScale(1, 1)
+desktop.BorderSizePixel = 0
+desktop.BackgroundColor3 = Color3.fromRGB(0, 78, 152)
+desktop.Parent = gui
+
+if WALLPAPER_IMAGE_ID ~= "" then
+	local img = Instance.new("ImageLabel")
+	img.Name = "Wallpaper"
+	img.Size = UDim2.fromScale(1, 1)
+	img.BackgroundTransparency = 1
+	img.Image = WALLPAPER_IMAGE_ID
+	img.ScaleType = Enum.ScaleType.Crop
+	img.Parent = desktop
+else
+	local grad = Instance.new("UIGradient")
+	grad.Rotation = 90
+	grad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 140, 220)),
+		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(15, 95, 165)),
+		ColorSequenceKeypoint.new(0.70, Color3.fromRGB(70, 150, 90)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 120, 60)),
+	})
+	grad.Parent = desktop
+end
+
+local powerOverlay = Instance.new("Frame")
+powerOverlay.Name = "PowerOverlay"
+powerOverlay.Size = UDim2.fromScale(1, 1)
+powerOverlay.BackgroundColor3 = Color3.new(0, 0, 0)
+powerOverlay.BorderSizePixel = 0
+powerOverlay.ZIndex = 10
+powerOverlay.Parent = gui
+
+local bootSound
+if BOOT_SOUND_ID ~= "" and BOOT_SOUND_ID ~= "rbxassetid://0" then
+	bootSound = Instance.new("Sound")
+	bootSound.Name = "BootSound"
+	bootSound.SoundId = BOOT_SOUND_ID
+	bootSound.Volume = BOOT_SOUND_VOLUME
+	bootSound.Parent = SoundService
+end
+
+task.spawn(function()
+	task.wait(POWER_ON_DELAY)
+
+	if bootSound then
+		bootSound:Play()
+	end
+
+	TweenService:Create(
+		powerOverlay,
+		TweenInfo.new(POWER_ON_FADE, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ BackgroundTransparency = 1 }
+	):Play()
+
+	task.wait(POWER_ON_FADE + 0.1)
+	powerOverlay.Visible = false
+
+	UserInputService.MouseIconEnabled = true
+	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+end)
+]=]
+
+----------------------------------------------------------------------
+-- Resolve install targets (containers must exist before parenting)
+----------------------------------------------------------------------
+local function getStarterPlayerScripts()
+	local sps = StarterPlayer:FindFirstChildOfClass("StarterPlayerScripts")
+	if not sps then
+		sps = Instance.new("StarterPlayerScripts")
+		sps.Parent = StarterPlayer
+	end
+	return sps
+end
+
+local function getTargets()
+	return {
+		ReplicatedFirst = ReplicatedFirst,
+		StarterPlayerScripts = getStarterPlayerScripts(),
+	}
+end
+
+local MODULES = {
+	{ name = "HackSimLoading", target = "ReplicatedFirst",      source = LOADING_SOURCE },
+	{ name = "HackSimDesktop", target = "StarterPlayerScripts", source = DESKTOP_SOURCE },
+}
+
+----------------------------------------------------------------------
 -- Remove every instance this plugin previously installed.
 ----------------------------------------------------------------------
 local function removePrevious()
@@ -318,12 +472,17 @@ local function removePrevious()
 		end
 	end
 
-	-- Fallback: leftover copies by name in ReplicatedFirst (e.g. tag was lost).
-	local byName = ReplicatedFirst:FindFirstChild(SCRIPT_NAME)
-	while byName do
-		byName:Destroy()
-		count += 1
-		byName = ReplicatedFirst:FindFirstChild(SCRIPT_NAME)
+	-- Fallback: leftover copies by name in our known containers.
+	local targets = getTargets()
+	for _, container in pairs(targets) do
+		for _, m in ipairs(MODULES) do
+			local f = container:FindFirstChild(m.name)
+			while f do
+				f:Destroy()
+				count += 1
+				f = container:FindFirstChild(m.name)
+			end
+		end
 	end
 
 	return count
@@ -333,15 +492,18 @@ end
 -- Install (remove previous, then create fresh).
 ----------------------------------------------------------------------
 local function install()
-	local recording = ChangeHistoryService:TryBeginRecording("HackSim: install loading screen")
+	local recording = ChangeHistoryService:TryBeginRecording("HackSim: install")
 	local removed = removePrevious()
+	local targets = getTargets()
 
 	local ok, err = pcall(function()
-		local ls = Instance.new("LocalScript")
-		ls.Name = SCRIPT_NAME
-		ls.Source = LOADING_SOURCE -- needs Script Injection permission
-		CollectionService:AddTag(ls, INSTALL_TAG)
-		ls.Parent = ReplicatedFirst
+		for _, m in ipairs(MODULES) do
+			local ls = Instance.new("LocalScript")
+			ls.Name = m.name
+			ls.Source = m.source -- needs Script Injection permission
+			CollectionService:AddTag(ls, INSTALL_TAG)
+			ls.Parent = targets[m.target]
+		end
 	end)
 
 	if recording then
@@ -352,7 +514,7 @@ local function install()
 	end
 
 	if ok then
-		print(("[HackSim] OK - loading screen installed into ReplicatedFirst (removed %d old copy/copies)."):format(removed))
+		print(("[HackSim] OK - installed loading screen + desktop (removed %d old item(s))."):format(removed))
 	else
 		warn("[HackSim] FAILED to install: " .. tostring(err))
 		warn("[HackSim] If this is a permission error, allow 'Script Injection' for this plugin, then press Install again.")
@@ -363,7 +525,7 @@ end
 -- Uninstall.
 ----------------------------------------------------------------------
 local function uninstall()
-	local recording = ChangeHistoryService:TryBeginRecording("HackSim: uninstall loading screen")
+	local recording = ChangeHistoryService:TryBeginRecording("HackSim: uninstall")
 	local removed = removePrevious()
 	if recording then
 		ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
@@ -378,7 +540,7 @@ local toolbar = plugin:CreateToolbar("SPINSPIN HackSim")
 
 local installBtn = toolbar:CreateButton(
 	"Install / Reinstall",
-	"Remove any previous copy and install the hacking loading screen into ReplicatedFirst",
+	"Remove any previous copy and install the loading screen + PC desktop",
 	""
 )
 installBtn.ClickableWhenViewportHidden = true
@@ -389,7 +551,7 @@ end)
 
 local uninstallBtn = toolbar:CreateButton(
 	"Uninstall",
-	"Remove the hacking loading screen this plugin installed",
+	"Remove everything this plugin installed",
 	""
 )
 uninstallBtn.ClickableWhenViewportHidden = true

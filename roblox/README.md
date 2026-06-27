@@ -7,8 +7,27 @@
 
 | 파일 | 설명 |
 | --- | --- |
-| `HackSimInstaller.plugin.lua` | **이걸 설치하세요.** 로딩 화면을 게임에 자동 설치/재설치하는 Studio 플러그인. 로딩 화면 코드가 내장되어 있어 이 파일 하나면 됩니다. |
-| `HackSimLoadingScreen.client.lua` | 플러그인이 설치하는 로딩 화면 LocalScript 원본 (읽기/수정용 참고본). |
+| `HackSimInstaller.plugin.lua` | **이걸 설치하세요.** 아래 두 스크립트를 게임에 자동 설치/재설치하는 Studio 플러그인. 코드가 내장되어 있어 이 파일 하나면 됩니다. |
+| `HackSimLoadingScreen.client.lua` | 로딩 화면 LocalScript 원본 (읽기/수정용 참고본). → `ReplicatedFirst` 에 설치됨 |
+| `HackSimDesktop.client.lua` | PC 부팅 + 바탕화면 LocalScript 원본 (읽기/수정용 참고본). → `StarterPlayerScripts` 에 설치됨 |
+
+## 스폰 후 PC 부팅 화면 (HackSimDesktop)
+
+게임에 들어와 스폰되면:
+
+- **캐릭터가 프리즈**됩니다 (컴퓨터 앞에 앉아 있는 느낌, 못 움직임)
+- 화면이 **검은색(전원 OFF) → 윈도우 시작음 → 바탕화면이 켜짐** 순서로 부팅
+- **마우스 커서가 보입니다** (게임은 모두 창으로 진행)
+- 로블록스 기본 UI(체력/백팩/채팅)를 숨겨서 "컴퓨터 안" 느낌
+
+### ⚠️ 윈도우 시작음 넣는 법
+로블록스는 **본인이 업로드(소유)한 사운드만** 게임에서 재생됩니다.
+옛날 윈도우 시작음을 본인 계정으로 업로드한 뒤, `HackSimDesktop.client.lua`
+(또는 플러그인 내장본) 상단의 `BOOT_SOUND_ID` 에 그 asset id를 넣으세요.
+넣기 전까지는 시작음 없이 화면만 켜집니다.
+
+바탕화면 이미지를 쓰고 싶으면 `WALLPAPER_IMAGE_ID` 에 이미지 asset id를
+넣으면 되고, 비워두면 클래식한 파랑→초록 그라데이션 배경이 나옵니다.
 
 ## 로딩 화면 모습
 
