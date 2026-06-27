@@ -452,23 +452,6 @@ local function buildWallpaper(parent)
 	glow.ZIndex = 3
 	glow.Parent = wall
 
-	-- Light swooshes
-	local function swoosh(posY, rot, thick, trans)
-		local s = Instance.new("Frame")
-		s.AnchorPoint = Vector2.new(0.5, 0.5)
-		s.Position = UDim2.fromScale(0.5, posY)
-		s.Size = UDim2.fromScale(1.4, thick)
-		s.Rotation = rot
-		s.BorderSizePixel = 0
-		s.BackgroundColor3 = Color3.fromRGB(235, 248, 255)
-		s.BackgroundTransparency = trans
-		s.ZIndex = 4
-		s.Parent = wall
-	end
-	swoosh(0.55, -10, 0.006, 0.55)
-	swoosh(0.66, -13, 0.010, 0.45)
-	swoosh(0.80, -16, 0.005, 0.65)
-
 	-- Bottom-left green hill hint
 	local grass = Instance.new("Frame")
 	grass.Name = "Grass"
