@@ -1752,6 +1752,159 @@ openTerminal = function()
 end
 
 ----------------------------------------------------------------------
+-- BREACH mini-game (the fun part: click glowing nodes before the trace)
+----------------------------------------------------------------------
+local breachWin
+
+local function moneyPop(amount)
+	local p = Instance.new("TextLabel")
+	p.AnchorPoint = Vector2.new(1, 1)
+	p.Position = UDim2.new(1, -150, 1, -56)
+	p.Size = UDim2.fromOffset(140, 36)
+	p.BackgroundTransparency = 1
+	p.Font = Enum.Font.GothamBold
+	p.Text = "+$" .. amount
+	p.TextColor3 = Color3.fromRGB(120, 255, 150)
+	p.TextSize = 26
+	p.TextXAlignment = Enum.TextXAlignment.Right
+	p.ZIndex = 80
+	p.Parent = gui
+	TweenService:Create(p, TweenInfo.new(1.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ Position = UDim2.new(1, -150, 1, -150), TextTransparency = 1 }):Play()
+	task.delay(1.2, function() p:Destroy() end)
+end
+
+local function playBreach(tgt)
+	if breachWin and breachWin.Parent then raise(breachWin) return end
+	local win, content = createWindow({ title = "BREACH :: " .. tgt.name, w = 0.52, h = 0.66, x = 0.24, y = 0.1, dark = true, accent = C.green })
+	breachWin = win win.Destroying:Connect(function() breachWin = nil end)
+
+	local diff   = math.clamp(tgt.reward / 6000, 0.05, 1)
+	local hasFast = tools.fast
+	local traceSpeed = (100 / (20 - diff * 9)) * (hasFast and 0.7 or 1) -- %/sec
+	local gain   = 9 - diff * 4
+
+	-- header / status
+	local status = Instance.new("TextLabel")
+	status.BackgroundTransparency = 1 status.Position = UDim2.fromOffset(16, 8) status.Size = UDim2.new(1, -32, 0, 20)
+	status.Font = Enum.Font.Code status.Text = "> 빛나는 노드를 빠르게 클릭해 침투하세요. 추적이 100%가 되기 전에!"
+	status.TextColor3 = C.termGrn status.TextSize = 13 status.TextXAlignment = Enum.TextXAlignment.Left
+	status.ZIndex = 2 status.Parent = content
+
+	-- trace bar (red)
+	local traceWrap = Instance.new("Frame")
+	traceWrap.Position = UDim2.fromOffset(16, 34) traceWrap.Size = UDim2.new(1, -32, 0, 16)
+	traceWrap.BackgroundColor3 = Color3.fromRGB(40, 22, 22) traceWrap.BorderSizePixel = 0 traceWrap.ZIndex = 2 traceWrap.Parent = content corner(traceWrap, 6)
+	local traceFill = Instance.new("Frame")
+	traceFill.Size = UDim2.new(0, 0, 1, 0) traceFill.BackgroundColor3 = Color3.fromRGB(235, 70, 70) traceFill.BorderSizePixel = 0 traceFill.ZIndex = 2 traceFill.Parent = traceWrap corner(traceFill, 6)
+	local traceTxt = Instance.new("TextLabel")
+	traceTxt.BackgroundTransparency = 1 traceTxt.Size = UDim2.fromScale(1, 1) traceTxt.Font = Enum.Font.Code
+	traceTxt.Text = "TRACE 0%" traceTxt.TextColor3 = Color3.fromRGB(255, 220, 220) traceTxt.TextSize = 12 traceTxt.ZIndex = 3 traceTxt.Parent = traceWrap
+
+	-- progress bar (green)
+	local progWrap = Instance.new("Frame")
+	progWrap.Position = UDim2.fromOffset(16, 56) progWrap.Size = UDim2.new(1, -32, 0, 16)
+	progWrap.BackgroundColor3 = Color3.fromRGB(20, 36, 26) progWrap.BorderSizePixel = 0 progWrap.ZIndex = 2 progWrap.Parent = content corner(progWrap, 6)
+	local progFill = Instance.new("Frame")
+	progFill.Size = UDim2.new(0, 0, 1, 0) progFill.BackgroundColor3 = C.green progFill.BorderSizePixel = 0 progFill.ZIndex = 2 progFill.Parent = progWrap corner(progFill, 6)
+	local progTxt = Instance.new("TextLabel")
+	progTxt.BackgroundTransparency = 1 progTxt.Size = UDim2.fromScale(1, 1) progTxt.Font = Enum.Font.Code
+	progTxt.Text = "BREACH 0%" progTxt.TextColor3 = Color3.fromRGB(210, 255, 220) progTxt.TextSize = 12 progTxt.ZIndex = 3 progTxt.Parent = progWrap
+
+	-- node grid
+	local grid = Instance.new("Frame")
+	grid.Position = UDim2.fromOffset(16, 84) grid.Size = UDim2.new(1, -32, 1, -150)
+	grid.BackgroundColor3 = Color3.fromRGB(8, 10, 14) grid.BorderSizePixel = 0 grid.ZIndex = 2 grid.Parent = content corner(grid, 8)
+	local gl = Instance.new("UIGridLayout")
+	gl.CellSize = UDim2.new(0.18, 0, 0.22, 0) gl.CellPadding = UDim2.new(0.022, 0, 0.03, 0)
+	gl.HorizontalAlignment = Enum.HorizontalAlignment.Center gl.VerticalAlignment = Enum.VerticalAlignment.Center gl.Parent = grid
+
+	local progress, trace, finished = 0, 0, false
+	local nodes = {}
+	local CHARS = "0123456789ABCDEF"
+	local function randHex() return CHARS:sub(math.random(1,16),math.random(1,16)) .. CHARS:sub(math.random(1,16),math.random(1,16)) end
+
+	local function endGame(win2)
+		if finished then return end
+		finished = true
+		if win2 then
+			status.Text = ">> ACCESS GRANTED <<" status.TextColor3 = Color3.fromRGB(140,255,170)
+			local okHack, payout, newMoney, newTotal = attemptHack(tgt, tgt.secret)
+			local amt = okHack and payout or tgt.reward
+			if okHack then money = newMoney totalEarned = newTotal end
+			pwned[tgt.id] = true
+			moneyPop(amt)
+			toast("✅ " .. tgt.name .. " 침투 성공! +$" .. amt)
+			updateMoneyHUD()
+			Tutorial.notify("exploitDone")
+			local flash = Instance.new("Frame") flash.Size = UDim2.fromScale(1,1) flash.BackgroundColor3 = C.green
+			flash.BackgroundTransparency = 0.4 flash.BorderSizePixel = 0 flash.ZIndex = 50 flash.Parent = content
+			TweenService:Create(flash, TweenInfo.new(0.5), { BackgroundTransparency = 1 }):Play()
+			task.delay(1.4, function() if breachWin then breachWin:Destroy() end end)
+		else
+			status.Text = "!! TRACED — 추적당했습니다. 다시 시도하세요 !!" status.TextColor3 = Color3.fromRGB(255,120,110)
+			local retry = Instance.new("TextButton")
+			retry.AnchorPoint = Vector2.new(0.5,1) retry.Position = UDim2.new(0.5,0,1,-12) retry.Size = UDim2.fromOffset(160,36)
+			retry.BackgroundColor3 = C.green retry.Font = Enum.Font.GothamBold retry.Text = "다시 시도" retry.TextColor3 = Color3.fromRGB(255,255,255)
+			retry.TextSize = 14 retry.ZIndex = 6 retry.Parent = content corner(retry, 8)
+			retry.MouseButton1Click:Connect(function() if breachWin then breachWin:Destroy() end playBreach(tgt) end)
+		end
+	end
+
+	for i = 1, 20 do
+		local b = Instance.new("TextButton")
+		b.BackgroundColor3 = Color3.fromRGB(22, 26, 34) b.AutoButtonColor = false
+		b.Font = Enum.Font.Code b.Text = randHex() b.TextColor3 = Color3.fromRGB(70, 90, 110) b.TextSize = 16
+		b.ZIndex = 3 b.Parent = grid corner(b, 6)
+		local node = { btn = b, active = false }
+		nodes[i] = node
+		b.MouseButton1Click:Connect(function()
+			if finished or not node.active then return end
+			node.active = false
+			b.BackgroundColor3 = Color3.fromRGB(22, 26, 34) b.TextColor3 = Color3.fromRGB(70, 90, 110)
+			progress = math.min(100, progress + gain)
+			-- hit particle
+			local pp = Instance.new("TextLabel") pp.AnchorPoint = Vector2.new(0.5,0.5) pp.Position = UDim2.fromScale(0.5,0.4)
+			pp.Size = UDim2.fromScale(1,1) pp.BackgroundTransparency = 1 pp.Font = Enum.Font.GothamBold pp.Text = "+"
+			pp.TextColor3 = C.green pp.TextSize = 22 pp.ZIndex = 5 pp.Parent = b
+			TweenService:Create(pp, TweenInfo.new(0.4), { Position = UDim2.fromScale(0.5,0.0), TextTransparency = 1 }):Play()
+			task.delay(0.45, function() pp:Destroy() end)
+			if progress >= 100 then endGame(true) end
+		end)
+	end
+
+	-- node spawner
+	task.spawn(function()
+		while breachWin and breachWin.Parent and not finished do
+			local n = nodes[math.random(1, #nodes)]
+			if n and not n.active then
+				n.active = true
+				n.btn.Text = randHex()
+				n.btn.BackgroundColor3 = Color3.fromRGB(20, 80, 40)
+				n.btn.TextColor3 = Color3.fromRGB(150, 255, 180)
+				local me = n
+				task.delay(1.3, function() if me.active then me.active = false me.btn.BackgroundColor3 = Color3.fromRGB(22,26,34) me.btn.TextColor3 = Color3.fromRGB(70,90,110) end end)
+			end
+			task.wait(0.55 - diff * 0.2)
+		end
+	end)
+
+	-- trace timer
+	task.spawn(function()
+		while breachWin and breachWin.Parent and not finished do
+			task.wait(0.1)
+			trace = trace + traceSpeed * 0.1
+			traceFill.Size = UDim2.new(math.clamp(trace/100, 0, 1), 0, 1, 0)
+			traceTxt.Text = "TRACE " .. math.floor(trace) .. "%"
+			progFill.Size = UDim2.new(math.clamp(progress/100, 0, 1), 0, 1, 0)
+			progTxt.Text = "BREACH " .. math.floor(progress) .. "%"
+			if trace >= 100 then endGame(false) end
+		end
+	end)
+end
+
+
+----------------------------------------------------------------------
 -- Contracts (의뢰 게시판 — 의뢰인을 대신해 해킹하고 보수를 받음)
 ----------------------------------------------------------------------
 local contractsWin
@@ -1820,15 +1973,13 @@ openContracts = function()
 		go.AnchorPoint = Vector2.new(1, 1) go.Position = UDim2.new(1, -16, 1, -12) go.Size = UDim2.fromOffset(120, 32)
 		go.Font = Enum.Font.GothamBold go.TextSize = 13 go.ZIndex = 2 go.Parent = row corner(go, 8)
 		if done then
-			go.Text = "다시 보기" go.BackgroundColor3 = C.surface go.TextColor3 = C.muted
+			go.Text = "완료됨" go.BackgroundColor3 = C.surface go.TextColor3 = C.muted
 		else
-			go.Text = "정찰 시작 »" go.BackgroundColor3 = Color3.fromRGB(230, 170, 40) go.TextColor3 = Color3.fromRGB(40, 30, 10)
+			go.Text = "⚡ 해킹 시작" go.BackgroundColor3 = Color3.fromRGB(40, 170, 90) go.TextColor3 = Color3.fromRGB(255, 255, 255)
 		end
 		go.MouseButton1Click:Connect(function()
-			openBrowser()
-			if browserGoto then browserGoto(t) end
-			if browserWin then raise(browserWin) end
-			toast("📋 의뢰 수락: " .. t.name .. " — DevTools로 토큰을 찾으세요")
+			if pwned[t.id] then toast("이미 완료한 의뢰예요") return end
+			playBreach(t)
 		end)
 	end
 end
