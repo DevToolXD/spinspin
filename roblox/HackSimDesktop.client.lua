@@ -157,25 +157,51 @@ if hasWall then
 	img.ZIndex = 1
 	img.Parent = wallpaper
 else
+	-- realistic night sky (deep blue top -> warm horizon glow at bottom)
+	wallpaper.BackgroundColor3 = Color3.fromRGB(12, 16, 38)
 	local wg = Instance.new("UIGradient")
-	wg.Rotation = 125
+	wg.Rotation = 90
 	wg.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0,    Color3.fromRGB(43, 88, 168)),
-		ColorSequenceKeypoint.new(0.5,  Color3.fromRGB(67, 78, 179)),
-		ColorSequenceKeypoint.new(1,    Color3.fromRGB(88, 60, 158)),
+		ColorSequenceKeypoint.new(0,    Color3.fromRGB(9, 12, 32)),
+		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(24, 28, 60)),
+		ColorSequenceKeypoint.new(0.82, Color3.fromRGB(72, 56, 92)),
+		ColorSequenceKeypoint.new(0.93, Color3.fromRGB(196, 110, 78)),
+		ColorSequenceKeypoint.new(1,    Color3.fromRGB(64, 40, 44)),
 	})
 	wg.Parent = wallpaper
-	-- soft depth blob
-	local blob = Instance.new("ImageLabel")
-	blob.AnchorPoint = Vector2.new(0.5, 0.5)
-	blob.Position = UDim2.fromScale(0.7, 0.32)
-	blob.Size = UDim2.fromScale(0.9, 0.9)
-	blob.BackgroundTransparency = 1
-	blob.Image = "rbxassetid://5028857472"
-	blob.ImageColor3 = Color3.fromRGB(255, 255, 255)
-	blob.ImageTransparency = 0.88
-	blob.ZIndex = 1
-	blob.Parent = wallpaper
+
+	-- milky-way soft glow band
+	local band = Instance.new("ImageLabel")
+	band.AnchorPoint = Vector2.new(0.5, 0.5)
+	band.Position = UDim2.fromScale(0.62, 0.34)
+	band.Size = UDim2.fromScale(1.1, 0.7)
+	band.Rotation = -28
+	band.BackgroundTransparency = 1
+	band.Image = "rbxassetid://5028857472"
+	band.ImageColor3 = Color3.fromRGB(150, 160, 220)
+	band.ImageTransparency = 0.82
+	band.ZIndex = 1
+	band.Parent = wallpaper
+
+	-- scattered stars
+	local stars = Instance.new("Frame")
+	stars.Size = UDim2.fromScale(1, 1) stars.BackgroundTransparency = 1 stars.ZIndex = 1 stars.Parent = wallpaper
+	local rng = Random.new(20260628)
+	for _ = 1, 90 do
+		local sx = rng:NextNumber()
+		local sy = rng:NextNumber() * 0.8
+		local sz = rng:NextInteger(1, 3)
+		local dot = Instance.new("Frame")
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.Position = UDim2.fromScale(sx, sy)
+		dot.Size = UDim2.fromOffset(sz, sz)
+		dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		dot.BackgroundTransparency = rng:NextNumber(0.1, 0.7)
+		dot.BorderSizePixel = 0
+		dot.ZIndex = 1
+		dot.Parent = stars
+		local dc = Instance.new("UICorner") dc.CornerRadius = UDim.new(1, 0) dc.Parent = dot
+	end
 end
 
 -- desktop layer holds icons + windows (clipped to screen)
@@ -448,7 +474,7 @@ local function applyDecode(method, s)
 end
 
 local totalEarned, hacksDone = 0, 0
-local upg = { mult = 1, speed = 1, hint = false }
+local learned = {}   -- 배운 해킹 기법: elements / network / console / cookies / decode
 local function isUnlocked(t) return totalEarned >= (t.unlockAt or 0) end
 
 local TARGETS = {
@@ -618,36 +644,35 @@ local function attemptHack(tgt, key)
 	if Net.online then
 		local res
 		local ok = pcall(function() res = Net.hack:InvokeServer(tgt.id, key) end)
-		if ok and type(res) == "table" and res.ok then
-			return true, res.payout, res.money, res.totalEarned
+		if ok and type(res) == "table" then
+			if res.ok then return true, res.payout, res.money, res.totalEarned end
+			return false, nil, nil, nil, res.err
 		end
 		return false
 	else
+		-- knowledge gate: you must have LEARNED the technique this site uses
+		if not learned[tgt.tokenWhere] then return false, nil, nil, nil, "skill" end
+		if tgt.enc and tgt.enc ~= "none" and not learned.decode then return false, nil, nil, nil, "decode" end
 		if key == tgt.secret then
-			local payout = math.floor(tgt.reward * upg.mult)
-			money += payout totalEarned += tgt.reward
-			return true, payout, money, totalEarned
+			money += tgt.reward totalEarned += tgt.reward
+			return true, tgt.reward, money, totalEarned
 		end
-		return false
+		return false, nil, nil, nil, "bad"
 	end
 end
 
-local function attemptBuy(key, cost, applyLocal)
+local function attemptLearn(key)
 	if Net.online then
 		local res
-		local ok = pcall(function() res = Net.buy:InvokeServer(key) end)
+		local ok = pcall(function() res = Net.learn:InvokeServer(key) end)
 		if ok and type(res) == "table" and res.ok then
-			money = res.money
-			if type(res.upg) == "table" then upg = res.upg end
+			if type(res.learned) == "table" then learned = res.learned end
 			return true
 		end
 		return false
 	else
-		if money >= cost then
-			money -= cost applyLocal()
-			return true
-		end
-		return false
+		learned[key] = true
+		return true
 	end
 end
 
@@ -657,16 +682,16 @@ task.spawn(function()
 	if not folder then return end
 	local g = folder:WaitForChild("GetData", 4)
 	local h = folder:WaitForChild("Hack", 4)
-	local b = folder:WaitForChild("Buy", 4)
-	if not (g and h and b) then return end
-	Net.get, Net.hack, Net.buy = g, h, b
+	local lrn = folder:WaitForChild("Learn", 4)
+	if not (g and h and lrn) then return end
+	Net.get, Net.hack, Net.learn = g, h, lrn
 	Net.online = true
 	local ok, prof = pcall(function() return g:InvokeServer() end)
 	if ok and type(prof) == "table" then
 		money = prof.money or money
 		totalEarned = prof.totalEarned or totalEarned
 		if type(prof.pwned) == "table" then pwned = prof.pwned end
-		if type(prof.upg) == "table" then upg = prof.upg end
+		if type(prof.learned) == "table" then learned = prof.learned end
 		if updateMoneyHUD then updateMoneyHUD() end
 	end
 end)
@@ -1321,7 +1346,7 @@ openBrowser = function()
 		hl.TextSize = 16 hl.TextXAlignment = Enum.TextXAlignment.Left hl.ZIndex = 2 hl.Parent = hc
 		local hh = Instance.new("TextLabel") hh.BackgroundTransparency = 1 hh.Position = UDim2.fromOffset(18, 42)
 		hh.Size = UDim2.new(1, -36, 0, 40) hh.Font = Enum.Font.Gotham
-		hh.Text = "💡 단서: " .. t.hint .. (upg.hint and "   🔓[자동힌트]" or "")
+		hh.Text = "💡 단서: " .. t.hint
 		hh.TextColor3 = Color3.fromRGB(120, 90, 40) hh.TextSize = 14 hh.TextWrapped = true
 		hh.TextXAlignment = Enum.TextXAlignment.Left hh.TextYAlignment = Enum.TextYAlignment.Top hh.ZIndex = 2 hh.Parent = hc
 		local od = Instance.new("TextButton") od.AnchorPoint = Vector2.new(0, 1) od.Position = UDim2.new(0, 18, 1, -14)
@@ -1435,21 +1460,27 @@ openHackTool = function()
 		running = true runBtn.Text = "... 실행 중 ..." runBtn.BackgroundColor3 = Color3.fromRGB(70,74,84)
 		local key, tgt = input.Text, selected
 		task.spawn(function()
-			local sp = upg.speed
-			println("[*] target : " .. tgt.url, Color3.fromRGB(120,200,255)) task.wait(0.3*sp)
-			println("[*] key    : " .. (key ~= "" and key or "(없음)"), C.muted) task.wait(0.3*sp)
-			println("[*] injecting payload ...", C.muted) task.wait(0.45*sp)
-			println("[*] bypassing firewall ...", C.muted) task.wait(0.45*sp)
-			local okHack, payout, newMoney, newTotal = attemptHack(tgt, key)
+			println("[*] target : " .. tgt.url, Color3.fromRGB(120,200,255)) task.wait(0.3)
+			println("[*] key    : " .. (key ~= "" and key or "(없음)"), C.muted) task.wait(0.3)
+			println("[*] injecting payload ...", C.muted) task.wait(0.45)
+			println("[*] bypassing firewall ...", C.muted) task.wait(0.45)
+			local okHack, payout, newMoney, newTotal, err = attemptHack(tgt, key)
 			if okHack then
 				println("[+] ACCESS GRANTED", C.termGrn)
-				println("[+] 입금 +$" .. payout, C.termGrn)
+				println("[+] 보상 +$" .. payout, C.termGrn)
 				money = newMoney totalEarned = newTotal hacksDone += 1 updateMoneyHUD()
 				pwned[tgt.id] = true selected = nil refreshTargets()
 				toast("✅ " .. tgt.name .. " 해킹 성공!  +$" .. payout)
 				Tutorial.notify("exploitDone")
+			elseif err == "skill" then
+				println("[-] 기법 부족 — 이 사이트의 토큰 위치를 다루는 법을 아직 모릅니다.", Color3.fromRGB(255,180,90))
+				println("    Academy에서 해당 기법을 먼저 '학습'하세요.", Color3.fromRGB(200,170,120))
+				toast("📚 먼저 Academy에서 기법을 학습하세요")
+			elseif err == "decode" then
+				println("[-] 암호화된 토큰 — 'Decoder' 기법을 학습해야 합니다.", Color3.fromRGB(255,180,90))
+				toast("📚 Academy에서 '암호 해독'을 학습하세요")
 			else
-				println("[-] ACCESS DENIED — 잘못된 토큰/조건", Color3.fromRGB(255,110,110))
+				println("[-] ACCESS DENIED — 잘못된 토큰", Color3.fromRGB(255,110,110))
 				println("    DevTools에서 올바른 토큰을 다시 찾으세요.", Color3.fromRGB(200,150,90))
 				toast("❌ 실패 — 토큰을 확인하세요")
 			end
@@ -1514,20 +1545,19 @@ openDecoder = function()
 end
 
 ----------------------------------------------------------------------
--- Shop
+-- Academy (learn techniques — you get smarter, not stronger)
 ----------------------------------------------------------------------
 openShop = function()
 	if shopWin and shopWin.Parent then raise(shopWin) return end
-	local win, content = createWindow({ title = "Shop — 업그레이드", w = 0.44, h = 0.58, x = 0.28, y = 0.14, dark = true, accent = C.green })
+	local win, content = createWindow({ title = "Academy — 해킹 기법 학습", w = 0.46, h = 0.62, x = 0.27, y = 0.12, dark = true, accent = C.accent })
 	shopWin = win win.Destroying:Connect(function() shopWin = nil end)
 
-	local items = {
-		{ key="mult",  name="수익 1.5배",      cost=800, desc="해킹 보상이 1.5배가 됩니다",
-			owned=function() return upg.mult > 1 end, apply=function() upg.mult = 1.5 end },
-		{ key="speed", name="익스플로잇 2배속", cost=600, desc="해킹 실행 대기시간이 절반으로",
-			owned=function() return upg.speed < 1 end, apply=function() upg.speed = 0.5 end },
-		{ key="hint",  name="자동 힌트",        cost=400, desc="사이트에서 토큰 위치/암호화 표시",
-			owned=function() return upg.hint end, apply=function() upg.hint = true end },
+	local lessons = {
+		{ key = "elements", name = "HTML 소스 분석", desc = "Elements 탭의 HTML에서 주석·meta 태그·숨은 속성에 박힌 키를 찾는 법." },
+		{ key = "network",  name = "네트워크 트래픽 분석", desc = "Network 탭의 요청을 열어 응답 JSON·set-cookie 헤더에 노출된 토큰을 읽는 법." },
+		{ key = "console",  name = "콘솔 로그 추적", desc = "개발자가 흘린 console.log 디버그 메시지에서 키가 새어나오는 경우를 잡는 법." },
+		{ key = "cookies",  name = "세션 쿠키 탈취", desc = "Application 탭의 Cookies에서 admin 세션 값을 훔치는 법." },
+		{ key = "decode",   name = "암호 해독 (ROT13·역순)", desc = "난독화된 토큰을 Decoder로 원본 키로 되돌리는 법." },
 	}
 
 	local scr = makeScroller(content) scr.Size = UDim2.fromScale(1,1) scr.ZIndex = 2
@@ -1536,37 +1566,38 @@ openShop = function()
 
 	local function render()
 		clearKids(scr)
+		local count = 0
+		for _, l in ipairs(lessons) do if learned[l.key] then count += 1 end end
 		local head = Instance.new("TextLabel")
 		head.BackgroundTransparency = 1 head.Size = UDim2.new(1, 0, 0, 24) head.Font = Enum.Font.Code
-		head.Text = "# 번 돈으로 능력을 강화하세요  (잔액: $" .. money .. ")"
+		head.Text = "# 기법을 배워 더 똑똑한 해커가 되세요  (배운 기법 " .. count .. "/" .. #lessons .. ")"
 		head.TextColor3 = C.termGrn head.TextSize = 13 head.TextXAlignment = Enum.TextXAlignment.Left
 		head.LayoutOrder = 0 head.ZIndex = 2 head.Parent = scr
-		for i, it in ipairs(items) do
+		for i, it in ipairs(lessons) do
 			local row = Instance.new("Frame")
-			row.Size = UDim2.new(1, 0, 0, 76) row.BackgroundColor3 = C.darkPan row.BorderSizePixel = 0
+			row.Size = UDim2.new(1, 0, 0, 86) row.BackgroundColor3 = C.darkPan row.BorderSizePixel = 0
 			row.LayoutOrder = i row.ZIndex = 2 row.Parent = scr corner(row, 10)
 			local nm = Instance.new("TextLabel")
-			nm.BackgroundTransparency = 1 nm.Position = UDim2.fromOffset(14, 10) nm.Size = UDim2.new(1, -130, 0, 22)
-			nm.Font = Enum.Font.GothamBold nm.Text = it.name nm.TextColor3 = C.darkText nm.TextSize = 16
+			nm.BackgroundTransparency = 1 nm.Position = UDim2.fromOffset(14, 10) nm.Size = UDim2.new(1, -134, 0, 22)
+			nm.Font = Enum.Font.GothamBold nm.Text = "📘 " .. it.name nm.TextColor3 = C.darkText nm.TextSize = 16
 			nm.TextXAlignment = Enum.TextXAlignment.Left nm.ZIndex = 2 nm.Parent = row
 			local ds = Instance.new("TextLabel")
-			ds.BackgroundTransparency = 1 ds.Position = UDim2.fromOffset(14, 36) ds.Size = UDim2.new(1, -130, 0, 30)
+			ds.BackgroundTransparency = 1 ds.Position = UDim2.fromOffset(14, 36) ds.Size = UDim2.new(1, -134, 0, 42)
 			ds.Font = Enum.Font.Gotham ds.Text = it.desc ds.TextColor3 = C.muted ds.TextSize = 13
-			ds.TextXAlignment = Enum.TextXAlignment.Left ds.TextWrapped = true ds.ZIndex = 2 ds.Parent = row
-			local buy = Instance.new("TextButton")
-			buy.AnchorPoint = Vector2.new(1, 0.5) buy.Position = UDim2.new(1, -14, 0.5, 0) buy.Size = UDim2.fromOffset(100, 38)
-			buy.Font = Enum.Font.GothamBold buy.TextSize = 14 buy.ZIndex = 2 buy.Parent = row corner(buy, 8)
-			if it.owned() then
-				buy.Text = "보유중" buy.BackgroundColor3 = Color3.fromRGB(30,50,34) buy.TextColor3 = C.green
+			ds.TextXAlignment = Enum.TextXAlignment.Left ds.TextWrapped = true ds.TextYAlignment = Enum.TextYAlignment.Top ds.ZIndex = 2 ds.Parent = row
+			local b = Instance.new("TextButton")
+			b.AnchorPoint = Vector2.new(1, 0.5) b.Position = UDim2.new(1, -14, 0.5, 0) b.Size = UDim2.fromOffset(106, 40)
+			b.Font = Enum.Font.GothamBold b.TextSize = 13 b.ZIndex = 2 b.Parent = row corner(b, 8)
+			if learned[it.key] then
+				b.Text = "학습 완료" b.BackgroundColor3 = Color3.fromRGB(30,50,34) b.TextColor3 = C.green
 			else
-				buy.Text = "$" .. it.cost buy.BackgroundColor3 = C.green buy.TextColor3 = Color3.fromRGB(255,255,255)
-				buy.MouseButton1Click:Connect(function()
-					if it.owned() then return end
-					if attemptBuy(it.key, it.cost, it.apply) then
-						updateMoneyHUD()
-						toast("✅ 구매 완료: " .. it.name) render()
+				b.Text = "학습하기" b.BackgroundColor3 = C.accent b.TextColor3 = Color3.fromRGB(255,255,255)
+				b.MouseButton1Click:Connect(function()
+					if learned[it.key] then return end
+					if attemptLearn(it.key) then
+						toast("📚 학습 완료: " .. it.name) render()
 					else
-						toast("💸 구매 실패 — 돈 부족 또는 이미 보유")
+						toast("학습 실패 — 잠시 후 다시 시도")
 					end
 				end)
 			end
@@ -1650,91 +1681,134 @@ openTerminal = function()
 end
 
 ----------------------------------------------------------------------
--- Desktop icons
+-- Desktop icons + Windows-11 style taskbar
 ----------------------------------------------------------------------
+local APPS = {
+	{ label = "GOOGULE",  glyph = "G",  bg = Color3.fromRGB(255,255,255), fg = Color3.fromRGB(66,133,244),  open = function() openBrowser() end },
+	{ label = "HackTool", glyph = ">_", bg = Color3.fromRGB(20,24,32),    fg = Color3.fromRGB(116,245,156), open = function() openHackTool() end },
+	{ label = "Academy",  glyph = "A",  bg = Color3.fromRGB(28,40,70),    fg = Color3.fromRGB(120,170,255), open = function() openShop() end },
+	{ label = "Decoder",  glyph = "D",  bg = Color3.fromRGB(42,32,62),    fg = Color3.fromRGB(190,150,255), open = function() openDecoder() end },
+	{ label = "Terminal", glyph = "_",  bg = Color3.fromRGB(12,14,20),    fg = Color3.fromRGB(116,245,156), open = function() openTerminal() end },
+}
+
 local function makeIcon(label, index, glyph, iconBg, glyphColor, onOpen)
 	local btn = Instance.new("TextButton")
 	btn.Name = "Icon_" .. label btn.AutoButtonColor = false btn.BackgroundTransparency = 1
-	btn.Text = "" btn.Size = UDim2.fromOffset(92, 100)
-	btn.Position = UDim2.fromOffset(24, 24 + (index - 1) * 112) btn.ZIndex = 5 btn.Parent = screen
+	btn.Text = "" btn.Size = UDim2.fromOffset(86, 92)
+	btn.Position = UDim2.fromOffset(20, 18 + (index - 1) * 100) btn.ZIndex = 5 btn.Parent = screen
 	local ico = Instance.new("Frame")
 	ico.AnchorPoint = Vector2.new(0.5, 0) ico.Position = UDim2.fromScale(0.5, 0)
-	ico.Size = UDim2.fromOffset(64, 64) ico.BackgroundColor3 = iconBg ico.ZIndex = 5 ico.Parent = btn
-	corner(ico, 18) stroke(ico, Color3.fromRGB(255,255,255), 1, 0.85)
+	ico.Size = UDim2.fromOffset(56, 56) ico.BackgroundColor3 = iconBg ico.ZIndex = 5 ico.Parent = btn
+	corner(ico, 14) stroke(ico, Color3.fromRGB(255,255,255), 1, 0.82)
 	local g = Instance.new("TextLabel")
 	g.BackgroundTransparency = 1 g.AnchorPoint = Vector2.new(0.5, 0.5) g.Position = UDim2.fromScale(0.5, 0.5)
-	g.Size = UDim2.fromScale(0.66, 0.66) g.Font = Enum.Font.FredokaOne g.Text = glyph
+	g.Size = UDim2.fromScale(0.62, 0.62) g.Font = Enum.Font.FredokaOne g.Text = glyph
 	g.TextColor3 = glyphColor g.TextScaled = true g.ZIndex = 6 g.Parent = ico
 	local lbl = Instance.new("TextLabel")
-	lbl.BackgroundTransparency = 1 lbl.Position = UDim2.fromOffset(0, 68) lbl.Size = UDim2.new(1, 0, 0, 26)
-	lbl.Font = Enum.Font.GothamMedium lbl.Text = label lbl.TextColor3 = Color3.fromRGB(255,255,255)
-	lbl.TextStrokeTransparency = 0.5 lbl.TextSize = 14 lbl.ZIndex = 6 lbl.Parent = btn
+	lbl.BackgroundTransparency = 1 lbl.Position = UDim2.fromOffset(-7, 60) lbl.Size = UDim2.new(1, 14, 0, 26)
+	lbl.Font = Enum.Font.Gotham lbl.Text = label lbl.TextColor3 = Color3.fromRGB(255,255,255)
+	lbl.TextStrokeTransparency = 0.45 lbl.TextSize = 13 lbl.ZIndex = 6 lbl.Parent = btn
+	local hl = Instance.new("Frame") hl.Size = UDim2.fromScale(1,1) hl.BackgroundColor3 = Color3.fromRGB(255,255,255)
+	hl.BackgroundTransparency = 1 hl.BorderSizePixel = 0 hl.ZIndex = 5 hl.Parent = btn corner(hl, 8)
+	btn.MouseEnter:Connect(function() hl.BackgroundTransparency = 0.88 end)
+	btn.MouseLeave:Connect(function() hl.BackgroundTransparency = 1 end)
 	btn.MouseButton1Click:Connect(onOpen)
 end
+for i, a in ipairs(APPS) do makeIcon(a.label, i, a.glyph, a.bg, a.fg, a.open) end
 
-makeIcon("GOOGULE", 1, "G", Color3.fromRGB(255,255,255), Color3.fromRGB(66,133,244), openBrowser)
-makeIcon("HackTool", 2, ">_", Color3.fromRGB(20,24,32), C.termGrn, openHackTool)
-makeIcon("Decoder", 3, "D", Color3.fromRGB(42,32,62), Color3.fromRGB(190,150,255), function() openDecoder() end)
-makeIcon("Shop", 4, "$", Color3.fromRGB(24,42,30), Color3.fromRGB(120,230,150), function() openShop() end)
-makeIcon("Terminal", 5, "_", Color3.fromRGB(12,14,20), C.termGrn, function() openTerminal() end)
-
-----------------------------------------------------------------------
--- Taskbar
-----------------------------------------------------------------------
+-- taskbar (full width, like Windows 11)
 local taskbar = Instance.new("Frame")
 taskbar.Name = "Taskbar" taskbar.AnchorPoint = Vector2.new(0.5, 1)
-taskbar.Position = UDim2.new(0.5, 0, 1, -8) taskbar.Size = UDim2.new(1, -16, 0, 52)
-taskbar.BackgroundColor3 = Color3.fromRGB(22, 25, 33) taskbar.BackgroundTransparency = 0.12
+taskbar.Position = UDim2.new(0.5, 0, 1, 0) taskbar.Size = UDim2.new(1, 0, 0, 48)
+taskbar.BackgroundColor3 = Color3.fromRGB(28, 29, 37) taskbar.BackgroundTransparency = 0.06
 taskbar.BorderSizePixel = 0 taskbar.ZIndex = 30 taskbar.Parent = gui
-corner(taskbar, 14) stroke(taskbar, Color3.fromRGB(255,255,255), 1, 0.9)
+local tbTop = Instance.new("Frame") tbTop.Size = UDim2.new(1, 0, 0, 1) tbTop.BackgroundColor3 = Color3.fromRGB(255,255,255)
+tbTop.BackgroundTransparency = 0.9 tbTop.BorderSizePixel = 0 tbTop.ZIndex = 31 tbTop.Parent = taskbar
 
-local function taskApp(order, glyph, glyphColor, tip, onOpen)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.fromOffset(40, 40) b.BackgroundColor3 = Color3.fromRGB(38, 42, 54)
-	b.Text = glyph b.Font = Enum.Font.FredokaOne b.TextSize = 18 b.TextColor3 = glyphColor
-	b.AutoButtonColor = true b.LayoutOrder = order b.ZIndex = 31 b.Parent = taskbar corner(b, 10)
-	b.MouseButton1Click:Connect(onOpen)
-	return b
+-- start menu (hidden until Start clicked)
+local startMenu = Instance.new("Frame")
+startMenu.AnchorPoint = Vector2.new(0.5, 1) startMenu.Position = UDim2.new(0.5, 0, 1, -58)
+startMenu.Size = UDim2.fromOffset(440, 260) startMenu.BackgroundColor3 = Color3.fromRGB(38, 39, 49)
+startMenu.BackgroundTransparency = 0.04 startMenu.BorderSizePixel = 0 startMenu.Visible = false
+startMenu.ZIndex = 42 startMenu.Parent = gui
+corner(startMenu, 14) stroke(startMenu, Color3.fromRGB(255,255,255), 1, 0.85)
+local smt = Instance.new("TextLabel") smt.BackgroundTransparency = 1 smt.Position = UDim2.fromOffset(22, 16)
+smt.Size = UDim2.new(1, -44, 0, 22) smt.Font = Enum.Font.GothamMedium smt.Text = "모든 앱"
+smt.TextColor3 = Color3.fromRGB(225,228,238) smt.TextSize = 15 smt.TextXAlignment = Enum.TextXAlignment.Left
+smt.ZIndex = 43 smt.Parent = startMenu
+local smGrid = Instance.new("Frame") smGrid.Position = UDim2.fromOffset(22, 50) smGrid.Size = UDim2.new(1, -44, 1, -70)
+smGrid.BackgroundTransparency = 1 smGrid.ZIndex = 43 smGrid.Parent = startMenu
+local smLay = Instance.new("UIGridLayout") smLay.CellSize = UDim2.fromOffset(92, 90) smLay.CellPadding = UDim2.fromOffset(8, 8)
+smLay.Parent = smGrid
+for i, a in ipairs(APPS) do
+	local b = Instance.new("TextButton") b.BackgroundColor3 = Color3.fromRGB(48, 50, 62) b.AutoButtonColor = true
+	b.Text = "" b.LayoutOrder = i b.ZIndex = 43 b.Parent = smGrid corner(b, 10)
+	local gi = Instance.new("TextLabel") gi.BackgroundTransparency = 1 gi.AnchorPoint = Vector2.new(0.5, 0)
+	gi.Position = UDim2.fromScale(0.5, 0.12) gi.Size = UDim2.fromOffset(34, 34) gi.Font = Enum.Font.FredokaOne
+	gi.Text = a.glyph gi.TextColor3 = a.fg gi.TextScaled = true gi.ZIndex = 44 gi.Parent = b
+	local gl = Instance.new("TextLabel") gl.BackgroundTransparency = 1 gl.AnchorPoint = Vector2.new(0.5, 1)
+	gl.Position = UDim2.fromScale(0.5, 0.94) gl.Size = UDim2.new(1, -8, 0, 18) gl.Font = Enum.Font.Gotham
+	gl.Text = a.label gl.TextColor3 = Color3.fromRGB(220,224,234) gl.TextSize = 12 gl.ZIndex = 44 gl.Parent = b
+	b.MouseButton1Click:Connect(function() startMenu.Visible = false a.open() end)
 end
 
--- center cluster
+-- centered cluster: Start + app icons + help
 local center = Instance.new("Frame")
 center.AnchorPoint = Vector2.new(0.5, 0.5) center.Position = UDim2.fromScale(0.5, 0.5)
-center.Size = UDim2.fromOffset(330, 40) center.BackgroundTransparency = 1 center.ZIndex = 31 center.Parent = taskbar
+center.Size = UDim2.fromOffset(430, 40) center.BackgroundTransparency = 1 center.ZIndex = 31 center.Parent = taskbar
 local clay = Instance.new("UIListLayout") clay.FillDirection = Enum.FillDirection.Horizontal
 clay.HorizontalAlignment = Enum.HorizontalAlignment.Center clay.VerticalAlignment = Enum.VerticalAlignment.Center
-clay.Padding = UDim.new(0, 10) clay.Parent = center
-local function centerApp(order, glyph, glyphColor, onOpen)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.fromOffset(40, 40) b.BackgroundColor3 = Color3.fromRGB(38, 42, 54)
-	b.Text = glyph b.Font = Enum.Font.FredokaOne b.TextSize = 18 b.TextColor3 = glyphColor
-	b.AutoButtonColor = true b.LayoutOrder = order b.ZIndex = 31 b.Parent = center corner(b, 10)
-	b.MouseButton1Click:Connect(onOpen)
+clay.Padding = UDim.new(0, 8) clay.Parent = center
+
+-- Start button with Windows logo (four squares)
+local startBtn = Instance.new("TextButton")
+startBtn.Size = UDim2.fromOffset(40, 40) startBtn.BackgroundColor3 = Color3.fromRGB(45, 47, 60)
+startBtn.AutoButtonColor = true startBtn.Text = "" startBtn.LayoutOrder = 0 startBtn.ZIndex = 31 startBtn.Parent = center
+corner(startBtn, 8)
+local sqCol = Color3.fromRGB(120, 185, 255)
+for _, off in ipairs({ { -5, -5 }, { 5, -5 }, { -5, 5 }, { 5, 5 } }) do
+	local sq = Instance.new("Frame") sq.AnchorPoint = Vector2.new(0.5, 0.5)
+	sq.Position = UDim2.new(0.5, off[1], 0.5, off[2]) sq.Size = UDim2.fromOffset(8, 8)
+	sq.BackgroundColor3 = sqCol sq.BorderSizePixel = 0 sq.ZIndex = 32 sq.Parent = startBtn
+	local sc = Instance.new("UICorner") sc.CornerRadius = UDim.new(0, 2) sc.Parent = sq
 end
-centerApp(1, "?", C.accent, function() openTutorial() end)
-centerApp(2, "G", Color3.fromRGB(66,133,244), openBrowser)
-centerApp(3, ">", C.termGrn, openHackTool)
-centerApp(4, "D", Color3.fromRGB(190,150,255), function() openDecoder() end)
-centerApp(5, "$", Color3.fromRGB(120,230,150), function() openShop() end)
-centerApp(6, "_", C.termGrn, function() openTerminal() end)
+startBtn.MouseButton1Click:Connect(function() startMenu.Visible = not startMenu.Visible end)
 
--- money pill (right)
+for i, a in ipairs(APPS) do
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.fromOffset(40, 40) b.BackgroundColor3 = Color3.fromRGB(45, 47, 60)
+	b.Text = a.glyph b.Font = Enum.Font.FredokaOne b.TextSize = 17 b.TextColor3 = a.fg
+	b.AutoButtonColor = true b.LayoutOrder = i b.ZIndex = 31 b.Parent = center corner(b, 8)
+	b.MouseButton1Click:Connect(a.open)
+end
+local helpB = Instance.new("TextButton")
+helpB.Size = UDim2.fromOffset(40, 40) helpB.BackgroundColor3 = Color3.fromRGB(45, 47, 60)
+helpB.Text = "?" helpB.Font = Enum.Font.GothamBold helpB.TextSize = 18 helpB.TextColor3 = C.accent
+helpB.AutoButtonColor = true helpB.LayoutOrder = 99 helpB.ZIndex = 31 helpB.Parent = center corner(helpB, 8)
+helpB.MouseButton1Click:Connect(function() openTutorial() end)
+
+-- right tray: money + clock/date
 local moneyHUD = Instance.new("TextLabel")
-moneyHUD.AnchorPoint = Vector2.new(1, 0.5) moneyHUD.Position = UDim2.new(1, -14, 0.5, 0)
-moneyHUD.Size = UDim2.fromOffset(120, 34) moneyHUD.BackgroundColor3 = Color3.fromRGB(16, 32, 22)
-moneyHUD.Font = Enum.Font.GothamBold moneyHUD.Text = "💰 $0" moneyHUD.TextColor3 = C.green
-moneyHUD.TextSize = 15 moneyHUD.ZIndex = 31 moneyHUD.Parent = taskbar corner(moneyHUD, 10)
-updateMoneyHUD = function() moneyHUD.Text = "💰 $" .. money end
+moneyHUD.AnchorPoint = Vector2.new(1, 0.5) moneyHUD.Position = UDim2.new(1, -132, 0.5, 0)
+moneyHUD.Size = UDim2.fromOffset(104, 30) moneyHUD.BackgroundColor3 = Color3.fromRGB(18, 32, 22)
+moneyHUD.Font = Enum.Font.GothamBold moneyHUD.Text = "💰 0" moneyHUD.TextColor3 = Color3.fromRGB(120,230,150)
+moneyHUD.TextSize = 14 moneyHUD.ZIndex = 31 moneyHUD.Parent = taskbar corner(moneyHUD, 8)
+updateMoneyHUD = function() moneyHUD.Text = "💰 " .. money end
 
--- clock (left)
-local clock = Instance.new("TextLabel")
-clock.AnchorPoint = Vector2.new(0, 0.5) clock.Position = UDim2.new(0, 16, 0.5, 0)
-clock.Size = UDim2.fromOffset(70, 34) clock.BackgroundTransparency = 1
-clock.Font = Enum.Font.GothamMedium clock.Text = "00:00" clock.TextColor3 = Color3.fromRGB(220, 226, 235)
-clock.TextSize = 15 clock.TextXAlignment = Enum.TextXAlignment.Left clock.ZIndex = 31 clock.Parent = taskbar
+local timeLbl = Instance.new("TextLabel")
+timeLbl.AnchorPoint = Vector2.new(1, 0) timeLbl.Position = UDim2.new(1, -16, 0, 7) timeLbl.Size = UDim2.fromOffset(94, 17)
+timeLbl.BackgroundTransparency = 1 timeLbl.Font = Enum.Font.GothamMedium timeLbl.Text = "00:00"
+timeLbl.TextColor3 = Color3.fromRGB(232,234,242) timeLbl.TextSize = 14 timeLbl.TextXAlignment = Enum.TextXAlignment.Right
+timeLbl.ZIndex = 31 timeLbl.Parent = taskbar
+local dateLbl = Instance.new("TextLabel")
+dateLbl.AnchorPoint = Vector2.new(1, 0) dateLbl.Position = UDim2.new(1, -16, 0, 25) dateLbl.Size = UDim2.fromOffset(94, 15)
+dateLbl.BackgroundTransparency = 1 dateLbl.Font = Enum.Font.Gotham dateLbl.Text = "----.--.--"
+dateLbl.TextColor3 = Color3.fromRGB(180,184,196) dateLbl.TextSize = 11 dateLbl.TextXAlignment = Enum.TextXAlignment.Right
+dateLbl.ZIndex = 31 dateLbl.Parent = taskbar
 task.spawn(function()
 	while gui.Parent do
-		clock.Text = os.date("%H:%M")
+		timeLbl.Text = os.date("%H:%M")
+		dateLbl.Text = os.date("%Y.%m.%d")
 		task.wait(10)
 	end
 end)
@@ -1755,12 +1829,12 @@ openTutorial = function()
 	corner(card, 16)
 
 	local steps = {
-		{ icon = "🕹️", t = "환영합니다, 해커님", d = "이 컴퓨터에서 사이트를 해킹해 돈을 버는 시뮬레이션이에요. 모든 건 창(앱)으로 진행됩니다." },
-		{ icon = "🌐", t = "1. GOOGULE 열기", d = "바탕화면이나 작업표시줄의 GOOGULE을 열고, '해킹 대상' 사이트에 접속하세요." },
-		{ icon = "🔧", t = "2. 개발자 도구 (F12)", d = "사이트에서 F12 또는 'DevTools' 버튼을 누르세요. Elements / Network / Console 탭을 뒤져 숨겨진 토큰을 찾습니다." },
-		{ icon = "📋", t = "3. 토큰 복사", d = "초록색 토큰을 클릭하면 복사돼요. 가짜 미끼 토큰도 섞여 있으니 단서를 잘 보세요!" },
-		{ icon = "⚡", t = "4. HackTool 로 해킹", d = "HackTool을 열고 대상 선택 → '붙여넣기' → 'EXPLOIT 실행'. 토큰이 맞으면 돈을 벌어요. 💰" },
-		{ icon = "🧰", t = "도구들", d = "🔐 암호화된 토큰은 Decoder로 풀고, 💲Shop에서 업그레이드를 사고, _ Terminal에서 scan/ls/decode 명령을 쓸 수 있어요. 돈을 모아 더 비싼 대상을 해금하세요!" },
+		{ icon = "🕹️", t = "환영합니다, 해커님", d = "사이트를 해킹하는 시뮬레이션이에요. 핵심은 '강해지는 것'이 아니라 '배워서 똑똑해지는 것' — 기법을 익혀야 뚫을 수 있어요." },
+		{ icon = "📚", t = "1. Academy에서 학습", d = "먼저 Academy 앱에서 해킹 기법(HTML 분석·네트워크·콘솔·쿠키·암호해독)을 '학습'하세요. 배운 기법으로만 해당 사이트를 뚫을 수 있어요." },
+		{ icon = "🌐", t = "2. GOOGULE로 접속", d = "GOOGULE을 열고 '해킹 대상' 사이트에 접속하세요. 각 사이트의 '단서'가 토큰이 어디 숨었는지 알려줍니다." },
+		{ icon = "🔧", t = "3. 개발자 도구 (F12)", d = "F12 또는 'DevTools' 버튼으로 Elements / Console / Network / Application 탭을 뒤져 숨은 토큰을 찾으세요. (미끼 토큰 주의!)" },
+		{ icon = "📋", t = "4. 토큰 복사 → 해독", d = "토큰을 클릭해 복사하세요. 난독화돼 있으면 Decoder로 원본 키로 되돌립니다." },
+		{ icon = "⚡", t = "5. HackTool로 침투", d = "HackTool에서 대상 선택 → '붙여넣기' → 'EXPLOIT'. 기법을 배웠고 토큰이 맞으면 성공! Terminal의 scan/ls도 활용하세요." },
 	}
 	local idx = 1
 
