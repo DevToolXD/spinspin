@@ -307,12 +307,16 @@ local function makeDraggable(win, handle)
 end
 
 -- returns win, content, titlebar
+local winOpenCount = 0
 local function createWindow(opts)
 	local dark = opts.dark
 	local win = Instance.new("Frame")
 	win.Name = "Window"
 	win.Size = UDim2.fromScale(opts.w, opts.h)
-	win.Position = UDim2.fromScale(opts.x or 0.2, opts.y or 0.12)
+	-- cascade so multiple windows don't stack exactly on top of each other
+	local casc = (winOpenCount % 5) * 26
+	winOpenCount += 1
+	win.Position = UDim2.new(opts.x or 0.2, casc, opts.y or 0.12, casc)
 	win.BackgroundColor3 = dark and C.dark or C.card
 	win.BorderSizePixel = 0
 	win.Parent = screen
@@ -548,30 +552,34 @@ do
 		layer.Name = "TutorialLayer"
 		layer.Size = UDim2.fromScale(1, 1)
 		layer.BackgroundTransparency = 1
-		layer.ZIndex = 200
+		layer.Active = false
+		layer.ZIndex = 5000
 		layer.Parent = gui
 
 		ring = Instance.new("Frame")
-		ring.BackgroundTransparency = 1
+		ring.BackgroundColor3 = Color3.fromRGB(255, 220, 70)
+		ring.BackgroundTransparency = 0.82
 		ring.BorderSizePixel = 0
-		ring.ZIndex = 200
+		ring.Active = false
+		ring.ZIndex = 5000
 		ring.Visible = false
 		ring.Parent = layer
 		corner(ring, 10)
 		local rs = Instance.new("UIStroke")
-		rs.Color = Color3.fromRGB(255, 210, 60)
+		rs.Color = Color3.fromRGB(255, 215, 50)
 		rs.Thickness = 4
 		rs.Parent = ring
-		TweenService:Create(rs, TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Transparency = 0.55, Thickness = 2 }):Play()
+		TweenService:Create(rs, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Thickness = 7 }):Play()
 
 		finger = Instance.new("TextLabel")
 		finger.AnchorPoint = Vector2.new(0.5, 1)
-		finger.Size = UDim2.fromOffset(44, 44)
+		finger.Size = UDim2.fromOffset(50, 50)
 		finger.BackgroundTransparency = 1
 		finger.Font = Enum.Font.GothamBold
 		finger.Text = "👇"
-		finger.TextSize = 36
-		finger.ZIndex = 201
+		finger.TextColor3 = Color3.fromRGB(255, 220, 70)
+		finger.TextSize = 40
+		finger.ZIndex = 5001
 		finger.Visible = false
 		finger.Parent = layer
 
@@ -582,7 +590,7 @@ do
 		bubble.BackgroundColor3 = C.dark
 		bubble.BackgroundTransparency = 0.03
 		bubble.BorderSizePixel = 0
-		bubble.ZIndex = 202
+		bubble.ZIndex = 5002
 		bubble.Parent = layer
 		corner(bubble, 14)
 		stroke(bubble, Color3.fromRGB(255, 210, 60), 2)
@@ -595,7 +603,7 @@ do
 		stepLbl.Text = "1/7"
 		stepLbl.TextColor3 = Color3.fromRGB(255, 210, 60)
 		stepLbl.TextSize = 16
-		stepLbl.ZIndex = 203
+		stepLbl.ZIndex = 5003
 		stepLbl.Parent = bubble
 
 		txt = Instance.new("TextLabel")
@@ -607,7 +615,7 @@ do
 		txt.TextSize = 15
 		txt.TextXAlignment = Enum.TextXAlignment.Left
 		txt.TextWrapped = true
-		txt.ZIndex = 203
+		txt.ZIndex = 5003
 		txt.Parent = bubble
 
 		local skip = Instance.new("TextButton")
@@ -619,7 +627,7 @@ do
 		skip.Text = "건너뛰기"
 		skip.TextColor3 = C.muted
 		skip.TextSize = 13
-		skip.ZIndex = 203
+		skip.ZIndex = 5003
 		skip.Parent = bubble
 		corner(skip, 8)
 		skip.MouseButton1Click:Connect(function() Tutorial.skip() end)
@@ -1459,18 +1467,23 @@ openHackTool = function()
 			end
 		end
 	end
-	local y = 40
+	local listH = 132
+	local tlist = makeScroller(content)
+	tlist.Position = UDim2.fromOffset(M, 38) tlist.Size = UDim2.new(1, -2*M, 0, listH) tlist.ZIndex = 2
+	tlist.BackgroundColor3 = Color3.fromRGB(14, 16, 22) tlist.BackgroundTransparency = 0
+	corner(tlist, 8)
+	local tllay = Instance.new("UIListLayout") tllay.Padding = UDim.new(0, 4) tllay.Parent = tlist
+	pad(tlist, 6, 8, 6, 6)
 	for i, t in ipairs(TARGETS) do
 		local b = Instance.new("TextButton")
-		b.Position = UDim2.fromOffset(M, y) b.Size = UDim2.new(1, -2*M, 0, 30)
+		b.Size = UDim2.new(1, 0, 0, 30)
 		b.Font = Enum.Font.Code b.Text = "" b.TextSize = 13
 		b.TextXAlignment = Enum.TextXAlignment.Left b.AutoButtonColor = false
-		b.ZIndex = 2 b.Parent = content corner(b, 6)
+		b.LayoutOrder = i b.ZIndex = 2 b.Parent = tlist corner(b, 6)
 		targetBtns[t.id] = b
 		b.MouseButton1Click:Connect(function() if isUnlocked(t) and not pwned[t.id] then selected = t refreshTargets() end end)
-		y += 34
 	end
-	y += 6
+	local y = 38 + listH + 8
 
 	local input = Instance.new("TextBox")
 	input.Position = UDim2.fromOffset(M, y) input.Size = UDim2.new(1, -2*M - 108, 0, 34)
