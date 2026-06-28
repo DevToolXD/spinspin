@@ -530,101 +530,153 @@ end
 ----------------------------------------------------------------------
 do
 	local active, idx = false, 1
-	local bubble, txt, hl, hlTween
+	local layer, ring, finger, bubble, txt, stepLbl, followConn
+
 	local steps = {
-		{ await = "browserOpen", text = "📋 1/6  Contracts 앱을 열고 의뢰의 '정찰 시작'을 누르세요  (반짝이는 아이콘)", hl = "Icon_Contracts" },
-		{ await = "siteVisit",   text = "🎯 2/6  의뢰 사이트에 접속됐어요. 아래 '단서'가 토큰 위치를 알려줍니다" },
-		{ await = "devOpen",     text = "🔧 3/6  F12 또는 '</> DevTools' 버튼으로 개발자 도구를 여세요" },
-		{ await = "tokenCopy",   text = "📋 4/6  Elements/Network/Console/Application 탭에서 토큰을 클릭해 복사하세요" },
-		{ await = "hackOpen",    text = "💻 5/6  HackTool 앱을 여세요  (반짝이는 아이콘)", hl = "Icon_HackTool" },
-		{ await = "exploitDone", text = "⚡ 6/6  대상 선택 → '붙여넣기' → 'EXPLOIT 실행'!" },
+		{ ev = "contractsOpen", target = "Icon_Contracts", text = "Contracts(의뢰) 앱을 클릭하세요" },
+		{ ev = "browserOpen",   target = "TutGoBtn",       text = "첫 의뢰의 '정찰 시작'을 클릭하세요" },
+		{ ev = "devOpen",       target = "TutDevBtn",      text = "'DevTools' 버튼(또는 F12)을 눌러 개발자도구를 여세요" },
+		{ ev = "tokenCopy",     target = "DevPanel",       text = "탭을 둘러보고 초록색 토큰(값)을 클릭해 복사하세요" },
+		{ ev = "hackOpen",      target = "Icon_HackTool",  text = "HackTool 앱을 클릭하세요" },
+		{ ev = "pasted",        target = "TutPasteBtn",    text = "'붙여넣기' 버튼을 클릭하세요" },
+		{ ev = "exploitDone",   target = "TutRunBtn",      text = "마지막! 'EXPLOIT 실행'을 클릭하세요 🎉" },
 	}
 
-	local function clearHL()
-		if hlTween then hlTween:Cancel() hlTween = nil end
-		if hl then hl:Destroy() hl = nil end
-	end
-	local function setHL(name)
-		clearHL()
-		local target = name and screen:FindFirstChild(name)
-		if not target then return end
-		hl = Instance.new("UIStroke")
-		hl.Color = Color3.fromRGB(255, 215, 70)
-		hl.Thickness = 3
-		hl.Parent = target
-		hlTween = TweenService:Create(hl, TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Transparency = 0.65 })
-		hlTween:Play()
-	end
+	local function build()
+		if layer then return end
+		layer = Instance.new("Frame")
+		layer.Name = "TutorialLayer"
+		layer.Size = UDim2.fromScale(1, 1)
+		layer.BackgroundTransparency = 1
+		layer.ZIndex = 200
+		layer.Parent = gui
 
-	local function ensureBubble()
-		if bubble then return end
+		ring = Instance.new("Frame")
+		ring.BackgroundTransparency = 1
+		ring.BorderSizePixel = 0
+		ring.ZIndex = 200
+		ring.Visible = false
+		ring.Parent = layer
+		corner(ring, 10)
+		local rs = Instance.new("UIStroke")
+		rs.Color = Color3.fromRGB(255, 210, 60)
+		rs.Thickness = 4
+		rs.Parent = ring
+		TweenService:Create(rs, TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Transparency = 0.55, Thickness = 2 }):Play()
+
+		finger = Instance.new("TextLabel")
+		finger.AnchorPoint = Vector2.new(0.5, 1)
+		finger.Size = UDim2.fromOffset(44, 44)
+		finger.BackgroundTransparency = 1
+		finger.Font = Enum.Font.GothamBold
+		finger.Text = "👇"
+		finger.TextSize = 36
+		finger.ZIndex = 201
+		finger.Visible = false
+		finger.Parent = layer
+
 		bubble = Instance.new("Frame")
-		bubble.Name = "TutorialBubble"
 		bubble.AnchorPoint = Vector2.new(0.5, 1)
-		bubble.Position = UDim2.new(0.5, 0, 1, -72)
-		bubble.Size = UDim2.fromOffset(620, 50)
+		bubble.Position = UDim2.new(0.5, 0, 1, -64)
+		bubble.Size = UDim2.fromOffset(640, 56)
 		bubble.BackgroundColor3 = C.dark
-		bubble.BackgroundTransparency = 0.05
+		bubble.BackgroundTransparency = 0.03
 		bubble.BorderSizePixel = 0
-		bubble.ZIndex = 66
-		bubble.Parent = gui
-		corner(bubble, 12)
-		stroke(bubble, C.accent, 1.5)
+		bubble.ZIndex = 202
+		bubble.Parent = layer
+		corner(bubble, 14)
+		stroke(bubble, Color3.fromRGB(255, 210, 60), 2)
+
+		stepLbl = Instance.new("TextLabel")
+		stepLbl.BackgroundTransparency = 1
+		stepLbl.Position = UDim2.fromOffset(16, 0)
+		stepLbl.Size = UDim2.fromOffset(54, 56)
+		stepLbl.Font = Enum.Font.GothamBold
+		stepLbl.Text = "1/7"
+		stepLbl.TextColor3 = Color3.fromRGB(255, 210, 60)
+		stepLbl.TextSize = 16
+		stepLbl.ZIndex = 203
+		stepLbl.Parent = bubble
+
 		txt = Instance.new("TextLabel")
 		txt.BackgroundTransparency = 1
-		txt.Position = UDim2.fromOffset(16, 0)
-		txt.Size = UDim2.new(1, -90, 1, 0)
+		txt.Position = UDim2.fromOffset(74, 0)
+		txt.Size = UDim2.new(1, -160, 1, 0)
 		txt.Font = Enum.Font.GothamMedium
 		txt.TextColor3 = Color3.fromRGB(240, 244, 250)
-		txt.TextSize = 14
+		txt.TextSize = 15
 		txt.TextXAlignment = Enum.TextXAlignment.Left
 		txt.TextWrapped = true
-		txt.ZIndex = 67
+		txt.ZIndex = 203
 		txt.Parent = bubble
+
 		local skip = Instance.new("TextButton")
 		skip.AnchorPoint = Vector2.new(1, 0.5)
-		skip.Position = UDim2.new(1, -10, 0.5, 0)
-		skip.Size = UDim2.fromOffset(64, 30)
+		skip.Position = UDim2.new(1, -12, 0.5, 0)
+		skip.Size = UDim2.fromOffset(70, 32)
 		skip.BackgroundColor3 = Color3.fromRGB(48, 52, 64)
 		skip.Font = Enum.Font.GothamMedium
 		skip.Text = "건너뛰기"
 		skip.TextColor3 = C.muted
-		skip.TextSize = 12
-		skip.ZIndex = 67
+		skip.TextSize = 13
+		skip.ZIndex = 203
 		skip.Parent = bubble
 		corner(skip, 8)
 		skip.MouseButton1Click:Connect(function() Tutorial.skip() end)
+
+		followConn = RunService.Heartbeat:Connect(function()
+			if not active then return end
+			local s = steps[idx]
+			local el = s and gui:FindFirstChild(s.target, true)
+			if el and el:IsA("GuiObject") and el.Visible and el.AbsoluteSize.X > 0 then
+				local p, sz = el.AbsolutePosition, el.AbsoluteSize
+				ring.Visible = true
+				ring.Position = UDim2.fromOffset(p.X - 7, p.Y - 7)
+				ring.Size = UDim2.fromOffset(sz.X + 14, sz.Y + 14)
+				local bob = math.sin(os.clock() * 6) * 5
+				finger.Visible = true
+				finger.Position = UDim2.fromOffset(p.X + sz.X / 2, p.Y - 6 + bob)
+			else
+				ring.Visible = false
+				finger.Visible = false
+			end
+		end)
 	end
 
 	local function render()
-		ensureBubble()
+		build()
 		local s = steps[idx]
+		stepLbl.Text = idx .. "/" .. #steps
 		txt.Text = s.text
-		setHL(s.hl)
+	end
+
+	local function teardown()
+		if followConn then followConn:Disconnect() followConn = nil end
+		if layer then layer:Destroy() layer = nil end
+		ring, finger, bubble, txt, stepLbl = nil, nil, nil, nil, nil
 	end
 
 	local function finish()
 		active = false
-		clearHL()
-		if bubble then
-			txt.Text = "🎉 튜토리얼 완료! 돈을 모아 더 큰 사이트를 해금하고 Shop·Decoder·Terminal도 써보세요."
-			local b = bubble
-			task.delay(5, function() if b then b:Destroy() end end)
-			bubble = nil
+		if ring then ring.Visible = false end
+		if finger then finger.Visible = false end
+		if txt then
+			stepLbl.Text = "✓"
+			txt.Text = "튜토리얼 완료! 이제 Contracts에서 자유롭게 의뢰를 골라 해킹하세요. 🎉"
 		end
+		task.delay(6, teardown)
 	end
 
 	Tutorial.start = function()
-		active = true idx = 1 render()
+		active = true idx = 1 build() render()
 	end
 	Tutorial.skip = function()
-		active = false clearHL()
-		if bubble then bubble:Destroy() bubble = nil end
+		active = false teardown()
 	end
 	Tutorial.notify = function(ev)
 		if not active then return end
 		local s = steps[idx]
-		if s and s.await == ev then
+		if s and s.ev == ev then
 			idx += 1
 			if idx > #steps then finish() else render() end
 		end
@@ -756,6 +808,7 @@ openBrowser = function()
 	corner(urlBar, 13)
 
 	local devBtn = Instance.new("TextButton")
+	devBtn.Name = "TutDevBtn"
 	devBtn.AnchorPoint = Vector2.new(1, 0)
 	devBtn.Position = UDim2.new(1, -10, 0, 9)
 	devBtn.Size = UDim2.fromOffset(140, 26)
@@ -900,6 +953,7 @@ openBrowser = function()
 	local function buildDev()
 		if devPanel then devPanel:Destroy() end
 		devPanel = Instance.new("Frame")
+		devPanel.Name = "DevPanel"
 		devPanel.AnchorPoint = Vector2.new(0, 1)
 		devPanel.Position = UDim2.fromScale(0, 1)
 		devPanel.Size = UDim2.new(1, 0, 0.56, 0)
@@ -1426,16 +1480,18 @@ openHackTool = function()
 	input.ClearTextOnFocus = false input.ZIndex = 2 input.Parent = content
 	corner(input, 8) stroke(input, Color3.fromRGB(55, 65, 80), 1) pad(input, 10, 10, 0, 0)
 	local paste = Instance.new("TextButton")
+	paste.Name = "TutPasteBtn"
 	paste.AnchorPoint = Vector2.new(1, 0) paste.Position = UDim2.new(1, -M, 0, y)
 	paste.Size = UDim2.fromOffset(100, 34) paste.BackgroundColor3 = Color3.fromRGB(40, 52, 70)
 	paste.Font = Enum.Font.Code paste.Text = "📋 붙여넣기" paste.TextColor3 = Color3.fromRGB(205, 220, 235)
 	paste.TextSize = 13 paste.ZIndex = 2 paste.Parent = content corner(paste, 8)
 	paste.MouseButton1Click:Connect(function()
-		if Clipboard ~= "" then input.Text = Clipboard else toast("복사한 토큰이 없어요. DevTools에서 토큰을 클릭하세요.") end
+		if Clipboard ~= "" then input.Text = Clipboard Tutorial.notify("pasted") else toast("복사한 토큰이 없어요. DevTools에서 토큰을 클릭하세요.") end
 	end)
 	y += 44
 
 	local runBtn = Instance.new("TextButton")
+	runBtn.Name = "TutRunBtn"
 	runBtn.Position = UDim2.fromOffset(M, y) runBtn.Size = UDim2.new(1, -2*M, 0, 38) runBtn.BackgroundColor3 = C.green
 	runBtn.Font = Enum.Font.GothamBold runBtn.Text = "⚡ EXPLOIT 실행" runBtn.TextColor3 = Color3.fromRGB(255,255,255)
 	runBtn.TextSize = 16 runBtn.ZIndex = 2 runBtn.Parent = content corner(runBtn, 8)
@@ -1701,6 +1757,7 @@ local function diffStars(reward)
 end
 
 openContracts = function()
+	Tutorial.notify("contractsOpen")
 	if contractsWin and contractsWin.Parent then raise(contractsWin) return end
 	local win, content = createWindow({ title = "Contracts — 의뢰 게시판", w = 0.5, h = 0.68, x = 0.18, y = 0.08, accent = Color3.fromRGB(230, 170, 40) })
 	contractsWin = win win.Destroying:Connect(function() contractsWin = nil end)
@@ -1746,6 +1803,7 @@ openContracts = function()
 		reward.TextXAlignment = Enum.TextXAlignment.Right reward.ZIndex = 2 reward.Parent = row
 
 		local go = Instance.new("TextButton")
+		if i == 1 then go.Name = "TutGoBtn" end
 		go.AnchorPoint = Vector2.new(1, 1) go.Position = UDim2.new(1, -16, 1, -12) go.Size = UDim2.fromOffset(120, 32)
 		go.Font = Enum.Font.GothamBold go.TextSize = 13 go.ZIndex = 2 go.Parent = row corner(go, 8)
 		if done then
