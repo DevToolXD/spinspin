@@ -31,8 +31,8 @@ local TARGETS = {
 	mainframe  = { reward = 6000, unlockAt = 8000, secret = "ROOT@MAINFRAME9",  tech = "network",  enc = true },
 }
 
--- Learnable techniques (free — you get smarter, not stronger)
-local TECHNIQUES = { elements = true, network = true, console = true, cookies = true, decode = true }
+-- Buyable hacking tools (spend money to hack faster / smarter)
+local TOOLS = { fast = { cost = 600 }, scanner = { cost = 400 } }
 
 -- Remotes
 local folder = Instance.new("Folder")
@@ -44,15 +44,15 @@ local function makeRF(name)
 	rf.Parent = folder
 	return rf
 end
-local getRF   = makeRF("GetData")
-local hackRF  = makeRF("Hack")
-local learnRF = makeRF("Learn")
+local getRF  = makeRF("GetData")
+local hackRF = makeRF("Hack")
+local buyRF  = makeRF("Buy")
 
 -- Profiles (in memory; persisted to DataStore)
 local data = {}
 
 local function defaultProfile()
-	return { money = 0, totalEarned = 0, pwned = {}, learned = {} }
+	return { money = 0, totalEarned = 0, pwned = {}, tools = {} }
 end
 
 local function keyFor(plr) return "plr_" .. plr.UserId end
@@ -65,7 +65,7 @@ local function loadProfile(plr)
 			prof.money       = tonumber(saved.money) or 0
 			prof.totalEarned = tonumber(saved.totalEarned) or 0
 			prof.pwned       = type(saved.pwned) == "table" and saved.pwned or {}
-			prof.learned     = type(saved.learned) == "table" and saved.learned or {}
+			prof.tools       = type(saved.tools) == "table" and saved.tools or {}
 		end
 	end
 	data[plr.UserId] = prof
@@ -78,7 +78,7 @@ local function saveProfile(plr)
 	pcall(function()
 		store:SetAsync(keyFor(plr), {
 			money = prof.money, totalEarned = prof.totalEarned,
-			pwned = prof.pwned, learned = prof.learned,
+			pwned = prof.pwned, tools = prof.tools,
 		})
 	end)
 end
@@ -121,11 +121,7 @@ hackRF.OnServerInvoke = function(plr, id, token)
 	if type(id) ~= "string" then return { ok = false } end
 	local t = TARGETS[id]
 	if not t then return { ok = false, err = "unknown" } end
-	if prof.totalEarned < (t.unlockAt or 0) then return { ok = false, err = "locked" } end
 	if prof.pwned[id] then return { ok = false, err = "done" } end
-	-- knowledge gate: must have learned the technique (and decode for encrypted)
-	if not prof.learned[t.tech] then return { ok = false, err = "skill" } end
-	if t.enc and not prof.learned.decode then return { ok = false, err = "decode" } end
 	if tostring(token) ~= t.secret then return { ok = false, err = "bad" } end
 	prof.money = prof.money + t.reward
 	prof.totalEarned = prof.totalEarned + t.reward
@@ -134,13 +130,17 @@ hackRF.OnServerInvoke = function(plr, id, token)
 	return { ok = true, payout = t.reward, money = prof.money, totalEarned = prof.totalEarned }
 end
 
-learnRF.OnServerInvoke = function(plr, key)
+buyRF.OnServerInvoke = function(plr, key)
 	local prof = data[plr.UserId]
 	if not prof or not rateOk(plr) then return { ok = false } end
-	if not TECHNIQUES[key] then return { ok = false, err = "unknown" } end
-	prof.learned[key] = true
+	local tool = TOOLS[key]
+	if not tool then return { ok = false, err = "unknown" } end
+	if prof.tools[key] then return { ok = false, err = "owned" } end
+	if prof.money < tool.cost then return { ok = false, err = "poor" } end
+	prof.money = prof.money - tool.cost
+	prof.tools[key] = true
 	saveProfile(plr)
-	return { ok = true, learned = prof.learned }
+	return { ok = true, money = prof.money, tools = prof.tools }
 end
 
-print("[HackSim] Server ready (save + skill-gated anti-cheat). DataStore: " .. (store and "ON" or "OFF (no API access)"))
+print("[HackSim] Server ready (save + anti-cheat). DataStore: " .. (store and "ON" or "OFF (no API access)"))

@@ -20,6 +20,9 @@ local RunService       = game:GetService("RunService")
 local WALLPAPER_IMAGE_ID = ""   -- 바탕화면 사진 (예: "rbxassetid://123"), 비우면 모던 그라데이션
 local BOOT_SOUND_ID      = "rbxassetid://0"
 local BOOT_SOUND_VOLUME  = 0.5
+-- 'Claude Code 사용하기' 게임패스 ID. 본인 게임패스 id를 넣으세요.
+-- 0으로 두면 테스트용으로 누구나 무료 사용 가능합니다.
+local CLAUDE_GAMEPASS_ID = 0
 -- ==========================================================
 
 local hasWall = (WALLPAPER_IMAGE_ID ~= "" and WALLPAPER_IMAGE_ID ~= "rbxassetid://0")
@@ -474,8 +477,8 @@ local function applyDecode(method, s)
 end
 
 local totalEarned, hacksDone = 0, 0
-local learned = {}   -- 배운 해킹 기법: elements / network / console / cookies / decode
-local function isUnlocked(t) return totalEarned >= (t.unlockAt or 0) end
+local tools = {}   -- 보유한 해킹툴: fast(빠른 익스플로잇) / scanner(토큰 위치 표시)
+local function isUnlocked(t) return true end  -- 잠금 없음: 누구나 시도 가능 (난이도는 보상에 비례)
 
 local TARGETS = {
 	{ id="freerobux", name="FreeRobux Generator", url="free-robux-generator.com", kind="generator",
@@ -529,11 +532,11 @@ do
 	local active, idx = false, 1
 	local bubble, txt, hl, hlTween
 	local steps = {
-		{ await = "browserOpen", text = "🌐 1/6  GOOGULE 앱을 여세요  (바탕화면 또는 아래 작업표시줄의 G)", hl = "Icon_GOOGULE" },
-		{ await = "siteVisit",   text = "🎯 2/6  '해킹 대상' 목록에서 사이트를 클릭해 접속하세요" },
+		{ await = "browserOpen", text = "📋 1/6  Contracts 앱을 열고 의뢰의 '정찰 시작'을 누르세요  (반짝이는 아이콘)", hl = "Icon_Contracts" },
+		{ await = "siteVisit",   text = "🎯 2/6  의뢰 사이트에 접속됐어요. 아래 '단서'가 토큰 위치를 알려줍니다" },
 		{ await = "devOpen",     text = "🔧 3/6  F12 또는 '</> DevTools' 버튼으로 개발자 도구를 여세요" },
-		{ await = "tokenCopy",   text = "📋 4/6  Elements/Network/Console 탭에서 초록색 토큰을 클릭해 복사하세요" },
-		{ await = "hackOpen",    text = "💻 5/6  HackTool 앱을 여세요", hl = "Icon_HackTool" },
+		{ await = "tokenCopy",   text = "📋 4/6  Elements/Network/Console/Application 탭에서 토큰을 클릭해 복사하세요" },
+		{ await = "hackOpen",    text = "💻 5/6  HackTool 앱을 여세요  (반짝이는 아이콘)", hl = "Icon_HackTool" },
 		{ await = "exploitDone", text = "⚡ 6/6  대상 선택 → '붙여넣기' → 'EXPLOIT 실행'!" },
 	}
 
@@ -631,7 +634,8 @@ end
 ----------------------------------------------------------------------
 -- Forward declarations
 ----------------------------------------------------------------------
-local openBrowser, openHackTool, openTutorial, openDecoder, openShop, openTerminal
+local openBrowser, openHackTool, openTutorial, openDecoder, openShop, openTerminal, openContracts, openClaudeCode
+local browserGoto   -- set by openBrowser; lets other apps navigate the browser to a site
 local updateMoneyHUD
 
 ----------------------------------------------------------------------
@@ -650,9 +654,6 @@ local function attemptHack(tgt, key)
 		end
 		return false
 	else
-		-- knowledge gate: you must have LEARNED the technique this site uses
-		if not learned[tgt.tokenWhere] then return false, nil, nil, nil, "skill" end
-		if tgt.enc and tgt.enc ~= "none" and not learned.decode then return false, nil, nil, nil, "decode" end
 		if key == tgt.secret then
 			money += tgt.reward totalEarned += tgt.reward
 			return true, tgt.reward, money, totalEarned
@@ -661,18 +662,22 @@ local function attemptHack(tgt, key)
 	end
 end
 
-local function attemptLearn(key)
+local TOOL_COST = { fast = 600, scanner = 400 }
+
+local function attemptBuy(key)
 	if Net.online then
 		local res
-		local ok = pcall(function() res = Net.learn:InvokeServer(key) end)
+		local ok = pcall(function() res = Net.buy:InvokeServer(key) end)
 		if ok and type(res) == "table" and res.ok then
-			if type(res.learned) == "table" then learned = res.learned end
+			money = res.money
+			if type(res.tools) == "table" then tools = res.tools end
 			return true
 		end
 		return false
 	else
-		learned[key] = true
-		return true
+		local cost = TOOL_COST[key]
+		if cost and money >= cost then money -= cost tools[key] = true return true end
+		return false
 	end
 end
 
@@ -682,16 +687,16 @@ task.spawn(function()
 	if not folder then return end
 	local g = folder:WaitForChild("GetData", 4)
 	local h = folder:WaitForChild("Hack", 4)
-	local lrn = folder:WaitForChild("Learn", 4)
-	if not (g and h and lrn) then return end
-	Net.get, Net.hack, Net.learn = g, h, lrn
+	local b = folder:WaitForChild("Buy", 4)
+	if not (g and h and b) then return end
+	Net.get, Net.hack, Net.buy = g, h, b
 	Net.online = true
 	local ok, prof = pcall(function() return g:InvokeServer() end)
 	if ok and type(prof) == "table" then
 		money = prof.money or money
 		totalEarned = prof.totalEarned or totalEarned
 		if type(prof.pwned) == "table" then pwned = prof.pwned end
-		if type(prof.learned) == "table" then learned = prof.learned end
+		if type(prof.tools) == "table" then tools = prof.tools end
 		if updateMoneyHUD then updateMoneyHUD() end
 	end
 end)
@@ -1346,7 +1351,7 @@ openBrowser = function()
 		hl.TextSize = 16 hl.TextXAlignment = Enum.TextXAlignment.Left hl.ZIndex = 2 hl.Parent = hc
 		local hh = Instance.new("TextLabel") hh.BackgroundTransparency = 1 hh.Position = UDim2.fromOffset(18, 42)
 		hh.Size = UDim2.new(1, -36, 0, 40) hh.Font = Enum.Font.Gotham
-		hh.Text = "💡 단서: " .. t.hint
+		hh.Text = "💡 단서: " .. t.hint .. (tools.scanner and ("   🛰️ [스캐너] " .. (({ elements = "Elements", network = "Network", console = "Console", cookies = "Application" })[t.tokenWhere] or "?") .. " 탭") or "")
 		hh.TextColor3 = Color3.fromRGB(120, 90, 40) hh.TextSize = 14 hh.TextWrapped = true
 		hh.TextXAlignment = Enum.TextXAlignment.Left hh.TextYAlignment = Enum.TextYAlignment.Top hh.ZIndex = 2 hh.Parent = hc
 		local od = Instance.new("TextButton") od.AnchorPoint = Vector2.new(0, 1) od.Position = UDim2.new(0, 18, 1, -14)
@@ -1358,6 +1363,7 @@ openBrowser = function()
 	end
 
 	homeBtn.MouseButton1Click:Connect(showHome)
+	browserGoto = showSite
 	showHome()
 end
 
@@ -1460,10 +1466,11 @@ openHackTool = function()
 		running = true runBtn.Text = "... 실행 중 ..." runBtn.BackgroundColor3 = Color3.fromRGB(70,74,84)
 		local key, tgt = input.Text, selected
 		task.spawn(function()
-			println("[*] target : " .. tgt.url, Color3.fromRGB(120,200,255)) task.wait(0.3)
-			println("[*] key    : " .. (key ~= "" and key or "(없음)"), C.muted) task.wait(0.3)
-			println("[*] injecting payload ...", C.muted) task.wait(0.45)
-			println("[*] bypassing firewall ...", C.muted) task.wait(0.45)
+			local sp = tools.fast and 0.45 or 1   -- 'fast' 해킹툴 보유 시 더 빠르게
+			println("[*] target : " .. tgt.url, Color3.fromRGB(120,200,255)) task.wait(0.3*sp)
+			println("[*] key    : " .. (key ~= "" and key or "(없음)"), C.muted) task.wait(0.3*sp)
+			println("[*] injecting payload ...", C.muted) task.wait(0.45*sp)
+			println("[*] bypassing firewall ...", C.muted) task.wait(0.45*sp)
 			local okHack, payout, newMoney, newTotal, err = attemptHack(tgt, key)
 			if okHack then
 				println("[+] ACCESS GRANTED", C.termGrn)
@@ -1545,19 +1552,16 @@ openDecoder = function()
 end
 
 ----------------------------------------------------------------------
--- Academy (learn techniques — you get smarter, not stronger)
+-- Tools shop (buy hacking tools that make you faster)
 ----------------------------------------------------------------------
 openShop = function()
 	if shopWin and shopWin.Parent then raise(shopWin) return end
-	local win, content = createWindow({ title = "Academy — 해킹 기법 학습", w = 0.46, h = 0.62, x = 0.27, y = 0.12, dark = true, accent = C.accent })
+	local win, content = createWindow({ title = "Tools — 해킹툴 상점", w = 0.46, h = 0.6, x = 0.27, y = 0.12, dark = true, accent = C.green })
 	shopWin = win win.Destroying:Connect(function() shopWin = nil end)
 
-	local lessons = {
-		{ key = "elements", name = "HTML 소스 분석", desc = "Elements 탭의 HTML에서 주석·meta 태그·숨은 속성에 박힌 키를 찾는 법." },
-		{ key = "network",  name = "네트워크 트래픽 분석", desc = "Network 탭의 요청을 열어 응답 JSON·set-cookie 헤더에 노출된 토큰을 읽는 법." },
-		{ key = "console",  name = "콘솔 로그 추적", desc = "개발자가 흘린 console.log 디버그 메시지에서 키가 새어나오는 경우를 잡는 법." },
-		{ key = "cookies",  name = "세션 쿠키 탈취", desc = "Application 탭의 Cookies에서 admin 세션 값을 훔치는 법." },
-		{ key = "decode",   name = "암호 해독 (ROT13·역순)", desc = "난독화된 토큰을 Decoder로 원본 키로 되돌리는 법." },
+	local items = {
+		{ key = "fast",    name = "오버클럭 익스플로잇", cost = TOOL_COST.fast,    desc = "HackTool 실행 속도가 2배 이상 빨라집니다." },
+		{ key = "scanner", name = "토큰 스캐너",        cost = TOOL_COST.scanner, desc = "사이트 접속 시 토큰이 숨은 탭을 자동으로 표시합니다." },
 	}
 
 	local scr = makeScroller(content) scr.Size = UDim2.fromScale(1,1) scr.ZIndex = 2
@@ -1566,20 +1570,18 @@ openShop = function()
 
 	local function render()
 		clearKids(scr)
-		local count = 0
-		for _, l in ipairs(lessons) do if learned[l.key] then count += 1 end end
 		local head = Instance.new("TextLabel")
 		head.BackgroundTransparency = 1 head.Size = UDim2.new(1, 0, 0, 24) head.Font = Enum.Font.Code
-		head.Text = "# 기법을 배워 더 똑똑한 해커가 되세요  (배운 기법 " .. count .. "/" .. #lessons .. ")"
+		head.Text = "# 번 돈으로 더 좋은 툴을 사서 빠르게 해킹하세요  (잔액 " .. money .. ")"
 		head.TextColor3 = C.termGrn head.TextSize = 13 head.TextXAlignment = Enum.TextXAlignment.Left
 		head.LayoutOrder = 0 head.ZIndex = 2 head.Parent = scr
-		for i, it in ipairs(lessons) do
+		for i, it in ipairs(items) do
 			local row = Instance.new("Frame")
-			row.Size = UDim2.new(1, 0, 0, 86) row.BackgroundColor3 = C.darkPan row.BorderSizePixel = 0
+			row.Size = UDim2.new(1, 0, 0, 84) row.BackgroundColor3 = C.darkPan row.BorderSizePixel = 0
 			row.LayoutOrder = i row.ZIndex = 2 row.Parent = scr corner(row, 10)
 			local nm = Instance.new("TextLabel")
 			nm.BackgroundTransparency = 1 nm.Position = UDim2.fromOffset(14, 10) nm.Size = UDim2.new(1, -134, 0, 22)
-			nm.Font = Enum.Font.GothamBold nm.Text = "📘 " .. it.name nm.TextColor3 = C.darkText nm.TextSize = 16
+			nm.Font = Enum.Font.GothamBold nm.Text = "🛠️ " .. it.name nm.TextColor3 = C.darkText nm.TextSize = 16
 			nm.TextXAlignment = Enum.TextXAlignment.Left nm.ZIndex = 2 nm.Parent = row
 			local ds = Instance.new("TextLabel")
 			ds.BackgroundTransparency = 1 ds.Position = UDim2.fromOffset(14, 36) ds.Size = UDim2.new(1, -134, 0, 42)
@@ -1588,16 +1590,16 @@ openShop = function()
 			local b = Instance.new("TextButton")
 			b.AnchorPoint = Vector2.new(1, 0.5) b.Position = UDim2.new(1, -14, 0.5, 0) b.Size = UDim2.fromOffset(106, 40)
 			b.Font = Enum.Font.GothamBold b.TextSize = 13 b.ZIndex = 2 b.Parent = row corner(b, 8)
-			if learned[it.key] then
-				b.Text = "학습 완료" b.BackgroundColor3 = Color3.fromRGB(30,50,34) b.TextColor3 = C.green
+			if tools[it.key] then
+				b.Text = "보유중" b.BackgroundColor3 = Color3.fromRGB(30,50,34) b.TextColor3 = C.green
 			else
-				b.Text = "학습하기" b.BackgroundColor3 = C.accent b.TextColor3 = Color3.fromRGB(255,255,255)
+				b.Text = "$" .. it.cost b.BackgroundColor3 = C.green b.TextColor3 = Color3.fromRGB(255,255,255)
 				b.MouseButton1Click:Connect(function()
-					if learned[it.key] then return end
-					if attemptLearn(it.key) then
-						toast("📚 학습 완료: " .. it.name) render()
+					if tools[it.key] then return end
+					if attemptBuy(it.key) then
+						updateMoneyHUD() toast("🛠️ 구매 완료: " .. it.name) render()
 					else
-						toast("학습 실패 — 잠시 후 다시 시도")
+						toast("💸 구매 실패 — 돈이 부족합니다")
 					end
 				end)
 			end
@@ -1681,14 +1683,213 @@ openTerminal = function()
 end
 
 ----------------------------------------------------------------------
+-- Contracts (의뢰 게시판 — 의뢰인을 대신해 해킹하고 보수를 받음)
+----------------------------------------------------------------------
+local contractsWin
+local CLIENTS = {
+	freerobux = "익명 게이머", databank = "경쟁 은행", school = "낙제생 K군",
+	cryptomine = "라이벌 채굴자", gamevault = "성난 고객", citypower = "환경 단체",
+	megacorp = "내부 고발자", darkmarket = "위장 수사관", satellite = "외국 정보기관",
+	mainframe = "레지스탕스",
+}
+local function diffStars(reward)
+	if reward < 500 then return "★☆☆☆☆"
+	elseif reward < 1000 then return "★★☆☆☆"
+	elseif reward < 2000 then return "★★★☆☆"
+	elseif reward < 4000 then return "★★★★☆"
+	else return "★★★★★" end
+end
+
+openContracts = function()
+	if contractsWin and contractsWin.Parent then raise(contractsWin) return end
+	local win, content = createWindow({ title = "Contracts — 의뢰 게시판", w = 0.5, h = 0.68, x = 0.18, y = 0.08, accent = Color3.fromRGB(230, 170, 40) })
+	contractsWin = win win.Destroying:Connect(function() contractsWin = nil end)
+
+	local scr = makeScroller(content) scr.Size = UDim2.fromScale(1, 1) scr.ZIndex = 2
+	local lay = Instance.new("UIListLayout") lay.Padding = UDim.new(0, 10) lay.Parent = scr
+	pad(scr, 16, 16, 14, 16)
+
+	local head = Instance.new("TextLabel")
+	head.BackgroundTransparency = 1 head.Size = UDim2.new(1, 0, 0, 40) head.Font = Enum.Font.Gotham
+	head.Text = "📋 의뢰를 골라 의뢰인을 대신해 침투하세요. 보수가 클수록 난이도가 높습니다."
+	head.TextColor3 = C.muted head.TextSize = 14 head.TextWrapped = true
+	head.TextXAlignment = Enum.TextXAlignment.Left head.LayoutOrder = 0 head.ZIndex = 2 head.Parent = scr
+
+	for i, t in ipairs(TARGETS) do
+		local done = pwned[t.id]
+		local row = Instance.new("Frame")
+		row.Size = UDim2.new(1, 0, 0, 92) row.BackgroundColor3 = C.card row.BorderSizePixel = 0
+		row.LayoutOrder = i row.ZIndex = 2 row.Parent = scr corner(row, 12) stroke(row, C.line, 1)
+
+		local client = Instance.new("TextLabel")
+		client.BackgroundTransparency = 1 client.Position = UDim2.fromOffset(16, 10) client.Size = UDim2.new(1, -150, 0, 18)
+		client.Font = Enum.Font.GothamBold client.Text = "의뢰인: " .. (CLIENTS[t.id] or "익명")
+		client.TextColor3 = Color3.fromRGB(200, 140, 30) client.TextSize = 13
+		client.TextXAlignment = Enum.TextXAlignment.Left client.ZIndex = 2 client.Parent = row
+
+		local nm = Instance.new("TextLabel")
+		nm.BackgroundTransparency = 1 nm.Position = UDim2.fromOffset(16, 30) nm.Size = UDim2.new(1, -150, 0, 22)
+		nm.Font = Enum.Font.GothamBold nm.Text = "🎯 " .. t.name nm.TextColor3 = C.text nm.TextSize = 17
+		nm.TextXAlignment = Enum.TextXAlignment.Left nm.ZIndex = 2 nm.Parent = row
+
+		local meta = Instance.new("TextLabel")
+		meta.BackgroundTransparency = 1 meta.Position = UDim2.fromOffset(16, 56) meta.Size = UDim2.new(1, -150, 0, 28)
+		meta.Font = Enum.Font.Code meta.Text = t.url .. "    난이도 " .. diffStars(t.reward)
+		meta.TextColor3 = C.muted meta.TextSize = 12 meta.TextXAlignment = Enum.TextXAlignment.Left
+		meta.ZIndex = 2 meta.Parent = row
+
+		local reward = Instance.new("TextLabel")
+		reward.AnchorPoint = Vector2.new(1, 0) reward.Position = UDim2.new(1, -16, 0, 12) reward.Size = UDim2.fromOffset(120, 24)
+		reward.BackgroundTransparency = 1 reward.Font = Enum.Font.GothamBold
+		reward.Text = done and "✅ 완료" or ("보수 $" .. t.reward)
+		reward.TextColor3 = done and C.green or Color3.fromRGB(210, 150, 30) reward.TextSize = 15
+		reward.TextXAlignment = Enum.TextXAlignment.Right reward.ZIndex = 2 reward.Parent = row
+
+		local go = Instance.new("TextButton")
+		go.AnchorPoint = Vector2.new(1, 1) go.Position = UDim2.new(1, -16, 1, -12) go.Size = UDim2.fromOffset(120, 32)
+		go.Font = Enum.Font.GothamBold go.TextSize = 13 go.ZIndex = 2 go.Parent = row corner(go, 8)
+		if done then
+			go.Text = "다시 보기" go.BackgroundColor3 = C.surface go.TextColor3 = C.muted
+		else
+			go.Text = "정찰 시작 »" go.BackgroundColor3 = Color3.fromRGB(230, 170, 40) go.TextColor3 = Color3.fromRGB(40, 30, 10)
+		end
+		go.MouseButton1Click:Connect(function()
+			openBrowser()
+			if browserGoto then browserGoto(t) end
+			if browserWin then raise(browserWin) end
+			toast("📋 의뢰 수락: " .. t.name .. " — DevTools로 토큰을 찾으세요")
+		end)
+	end
+end
+
+----------------------------------------------------------------------
+-- Claude Code (gamepass) — auto-recon + auto-hack with a flashy console
+----------------------------------------------------------------------
+local claudeWin
+local CLAUDE = Color3.fromRGB(217, 119, 87)
+
+openClaudeCode = function()
+	if claudeWin and claudeWin.Parent then raise(claudeWin) return end
+	local win, content = createWindow({ title = "Claude Code", w = 0.56, h = 0.64, x = 0.22, y = 0.1, dark = true, accent = CLAUDE })
+	claudeWin = win win.Destroying:Connect(function() claudeWin = nil end)
+
+	-- gamepass gate
+	local allowed = (CLAUDE_GAMEPASS_ID == 0)
+	if not allowed then
+		local ok, owns = pcall(function()
+			return game:GetService("MarketplaceService"):UserOwnsGamePassAsync(player.UserId, CLAUDE_GAMEPASS_ID)
+		end)
+		allowed = ok and owns
+	end
+
+	if not allowed then
+		local box = Instance.new("Frame")
+		box.AnchorPoint = Vector2.new(0.5, 0.5) box.Position = UDim2.fromScale(0.5, 0.45) box.Size = UDim2.fromOffset(360, 170)
+		box.BackgroundColor3 = C.darkPan box.BorderSizePixel = 0 box.ZIndex = 2 box.Parent = content corner(box, 12)
+		local t1 = Instance.new("TextLabel") t1.BackgroundTransparency = 1 t1.Position = UDim2.fromOffset(0, 22)
+		t1.Size = UDim2.new(1, 0, 0, 28) t1.Font = Enum.Font.GothamBold t1.Text = "Claude Code"
+		t1.TextColor3 = CLAUDE t1.TextSize = 22 t1.ZIndex = 3 t1.Parent = box
+		local t2 = Instance.new("TextLabel") t2.BackgroundTransparency = 1 t2.Position = UDim2.fromOffset(20, 56)
+		t2.Size = UDim2.new(1, -40, 0, 50) t2.Font = Enum.Font.Gotham t2.TextWrapped = true
+		t2.Text = "AI가 알아서 정찰하고 자동으로 해킹해 줍니다.\n게임패스가 필요합니다." t2.TextColor3 = C.darkText t2.TextSize = 14 t2.ZIndex = 3 t2.Parent = box
+		local buy = Instance.new("TextButton") buy.AnchorPoint = Vector2.new(0.5, 1) buy.Position = UDim2.fromScale(0.5, 0.92)
+		buy.Size = UDim2.fromOffset(220, 38) buy.BackgroundColor3 = CLAUDE buy.Font = Enum.Font.GothamBold
+		buy.Text = "게임패스 구매" buy.TextColor3 = Color3.fromRGB(255,255,255) buy.TextSize = 15 buy.ZIndex = 3 buy.Parent = box corner(buy, 8)
+		buy.MouseButton1Click:Connect(function()
+			if CLAUDE_GAMEPASS_ID > 0 then
+				pcall(function() game:GetService("MarketplaceService"):PromptGamePassPurchase(player, CLAUDE_GAMEPASS_ID) end)
+			else
+				toast("게임패스 ID가 설정되지 않았어요 (개발자가 CLAUDE_GAMEPASS_ID 설정)")
+			end
+		end)
+		return
+	end
+
+	-- console
+	local out = makeScroller(content)
+	out.Position = UDim2.fromOffset(12, 44) out.Size = UDim2.new(1, -24, 1, -100) out.ZIndex = 2
+	out.BackgroundColor3 = Color3.fromRGB(8, 10, 14)
+	local olay = Instance.new("UIListLayout") olay.Padding = UDim.new(0, 1) olay.Parent = out
+	pad(out, 10, 10, 8, 8)
+
+	-- animated Claude mark
+	local mark = Instance.new("Frame")
+	mark.AnchorPoint = Vector2.new(0.5, 0.5) mark.Size = UDim2.fromOffset(14, 14) mark.Position = UDim2.fromOffset(22, 23)
+	mark.Rotation = 45 mark.BackgroundColor3 = CLAUDE mark.BorderSizePixel = 0 mark.ZIndex = 3 mark.Parent = content
+	local mkc = Instance.new("UICorner") mkc.CornerRadius = UDim.new(0, 3) mkc.Parent = mark
+	local markLbl = Instance.new("TextLabel")
+	markLbl.Position = UDim2.fromOffset(42, 12) markLbl.Size = UDim2.new(1, -54, 0, 22) markLbl.BackgroundTransparency = 1
+	markLbl.Font = Enum.Font.Code markLbl.Text = "claude-opus  ·  idle" markLbl.TextColor3 = C.darkText markLbl.TextSize = 13
+	markLbl.TextXAlignment = Enum.TextXAlignment.Left markLbl.ZIndex = 3 markLbl.Parent = content
+
+	local running = false
+	local function line(text, color)
+		local l = Instance.new("TextLabel")
+		l.BackgroundTransparency = 1 l.Size = UDim2.new(1, 0, 0, 16) l.AutomaticSize = Enum.AutomaticSize.Y
+		l.TextWrapped = true l.Font = Enum.Font.Code l.Text = text l.TextColor3 = color or Color3.fromRGB(150, 230, 170)
+		l.TextSize = 13 l.TextXAlignment = Enum.TextXAlignment.Left l.LayoutOrder = #out:GetChildren() l.ZIndex = 2 l.Parent = out
+	end
+
+	local btn = Instance.new("TextButton")
+	btn.AnchorPoint = Vector2.new(0.5, 1) btn.Position = UDim2.new(0.5, 0, 1, -14) btn.Size = UDim2.new(1, -24, 0, 40)
+	btn.BackgroundColor3 = CLAUDE btn.Font = Enum.Font.GothamBold btn.Text = "» Claude에게 맡기기 (자동 해킹)"
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255) btn.TextSize = 15 btn.ZIndex = 2 btn.Parent = content corner(btn, 8)
+
+	local TAB_KOR = { elements = "Elements", network = "Network", console = "Console", cookies = "Application" }
+	btn.MouseButton1Click:Connect(function()
+		if running then return end
+		local tgt
+		for _, t in ipairs(TARGETS) do if not pwned[t.id] then tgt = t break end end
+		if not tgt then line("[claude] 남은 의뢰가 없습니다. 모두 완료!", Color3.fromRGB(150,230,170)) return end
+		running = true btn.Text = "... Claude 작업 중 ..." btn.BackgroundColor3 = Color3.fromRGB(70, 60, 54)
+		task.spawn(function()
+			markLbl.Text = "claude-opus  ·  working on " .. tgt.id
+			line("$ claude hack --target " .. tgt.url, Color3.fromRGB(120, 200, 255)) task.wait(0.4)
+			line("» 정찰 시작: DNS 조회 + 포트 스캔 ...", Color3.fromRGB(150,230,170)) task.wait(0.5)
+			line("  [+] 22/tcp open   80/tcp open   443/tcp open", Color3.fromRGB(120,210,150)) task.wait(0.4)
+			line("» DevTools 자동 분석: " .. (TAB_KOR[tgt.tokenWhere] or "?") .. " 탭", Color3.fromRGB(150,230,170)) task.wait(0.5)
+			if tgt.enc and tgt.enc ~= "none" then
+				line("  [!] 난독화된 토큰 감지 — 자동 복호화(" .. tgt.enc .. ")", Color3.fromRGB(255, 120, 110)) task.wait(0.5)
+			end
+			line("  [+] 토큰 추출: " .. tgt.secret, Color3.fromRGB(120,210,150)) task.wait(0.4)
+			-- animate the mark sweeping
+			for k = 1, 6 do
+				if not content.Parent then return end
+				TweenService:Create(mark, TweenInfo.new(0.18), { Position = UDim2.fromOffset(22 + (k % 2) * 16, 23 + math.random(-3, 3)) }):Play()
+				line("  > injecting payload chunk " .. k .. "/6 ...", Color3.fromRGB(110, 180, 140))
+				task.wait(0.18)
+			end
+			line("» 권한 상승 시도 ...", Color3.fromRGB(150,230,170)) task.wait(0.5)
+			local okHack, payout, newMoney, newTotal = attemptHack(tgt, tgt.secret)
+			if okHack then
+				line("[+] ROOT ACCESS GRANTED", Color3.fromRGB(120, 255, 150))
+				line("[+] 의뢰 완료 — 의뢰인 입금 +$" .. payout, Color3.fromRGB(120, 255, 150))
+				money = newMoney totalEarned = newTotal updateMoneyHUD()
+				pwned[tgt.id] = true
+				toast("AI가 " .. tgt.name .. " 해킹 완료! +$" .. payout)
+				Tutorial.notify("exploitDone")
+			else
+				line("[-] 실패 — 서버가 거부했습니다.", Color3.fromRGB(255, 110, 110))
+			end
+			markLbl.Text = "claude-opus  ·  done"
+			running = false btn.Text = "» Claude에게 맡기기 (자동 해킹)" btn.BackgroundColor3 = CLAUDE
+		end)
+	end)
+
+	line("Claude Code 준비 완료. 버튼을 누르면 남은 의뢰를 자동으로 처리합니다.", CLAUDE)
+end
+
+----------------------------------------------------------------------
 -- Desktop icons + Windows-11 style taskbar
 ----------------------------------------------------------------------
 local APPS = {
-	{ label = "GOOGULE",  glyph = "G",  bg = Color3.fromRGB(255,255,255), fg = Color3.fromRGB(66,133,244),  open = function() openBrowser() end },
-	{ label = "HackTool", glyph = ">_", bg = Color3.fromRGB(20,24,32),    fg = Color3.fromRGB(116,245,156), open = function() openHackTool() end },
-	{ label = "Academy",  glyph = "A",  bg = Color3.fromRGB(28,40,70),    fg = Color3.fromRGB(120,170,255), open = function() openShop() end },
-	{ label = "Decoder",  glyph = "D",  bg = Color3.fromRGB(42,32,62),    fg = Color3.fromRGB(190,150,255), open = function() openDecoder() end },
-	{ label = "Terminal", glyph = "_",  bg = Color3.fromRGB(12,14,20),    fg = Color3.fromRGB(116,245,156), open = function() openTerminal() end },
+	{ label = "Contracts", glyph = "C",  bg = Color3.fromRGB(36,30,18),    fg = Color3.fromRGB(255,200,90),  open = function() openContracts() end },
+	{ label = "GOOGULE",   glyph = "G",  bg = Color3.fromRGB(255,255,255), fg = Color3.fromRGB(66,133,244),  open = function() openBrowser() end },
+	{ label = "HackTool",  glyph = ">_", bg = Color3.fromRGB(20,24,32),    fg = Color3.fromRGB(116,245,156), open = function() openHackTool() end },
+	{ label = "Tools",     glyph = "T",  bg = Color3.fromRGB(18,40,26),    fg = Color3.fromRGB(120,230,150), open = function() openShop() end },
+	{ label = "Decoder",   glyph = "D",  bg = Color3.fromRGB(42,32,62),    fg = Color3.fromRGB(190,150,255), open = function() openDecoder() end },
+	{ label = "Terminal",  glyph = "_",  bg = Color3.fromRGB(12,14,20),    fg = Color3.fromRGB(116,245,156), open = function() openTerminal() end },
+	{ label = "ClaudeCode",glyph = "AI", bg = Color3.fromRGB(40,22,14),    fg = Color3.fromRGB(217,119,87),  open = function() openClaudeCode() end },
 }
 
 local function makeIcon(label, index, glyph, iconBg, glyphColor, onOpen)
@@ -1829,12 +2030,12 @@ openTutorial = function()
 	corner(card, 16)
 
 	local steps = {
-		{ icon = "🕹️", t = "환영합니다, 해커님", d = "사이트를 해킹하는 시뮬레이션이에요. 핵심은 '강해지는 것'이 아니라 '배워서 똑똑해지는 것' — 기법을 익혀야 뚫을 수 있어요." },
-		{ icon = "📚", t = "1. Academy에서 학습", d = "먼저 Academy 앱에서 해킹 기법(HTML 분석·네트워크·콘솔·쿠키·암호해독)을 '학습'하세요. 배운 기법으로만 해당 사이트를 뚫을 수 있어요." },
-		{ icon = "🌐", t = "2. GOOGULE로 접속", d = "GOOGULE을 열고 '해킹 대상' 사이트에 접속하세요. 각 사이트의 '단서'가 토큰이 어디 숨었는지 알려줍니다." },
-		{ icon = "🔧", t = "3. 개발자 도구 (F12)", d = "F12 또는 'DevTools' 버튼으로 Elements / Console / Network / Application 탭을 뒤져 숨은 토큰을 찾으세요. (미끼 토큰 주의!)" },
-		{ icon = "📋", t = "4. 토큰 복사 → 해독", d = "토큰을 클릭해 복사하세요. 난독화돼 있으면 Decoder로 원본 키로 되돌립니다." },
-		{ icon = "⚡", t = "5. HackTool로 침투", d = "HackTool에서 대상 선택 → '붙여넣기' → 'EXPLOIT'. 기법을 배웠고 토큰이 맞으면 성공! Terminal의 scan/ls도 활용하세요." },
+		{ icon = "🕹️", t = "환영합니다, 해커님", d = "당신은 의뢰를 받아 사이트를 뚫고 의뢰인에게서 보수를 받는 해커예요. 보수가 클수록 난이도가 높아집니다." },
+		{ icon = "📋", t = "1. 의뢰(Contracts) 수락", d = "Contracts 앱에서 의뢰를 골라 '정찰 시작'을 누르면 그 사이트로 이동합니다." },
+		{ icon = "🔧", t = "2. 개발자 도구 (F12)", d = "사이트에서 F12 또는 'DevTools'로 Elements / Console / Network / Application 탭을 뒤져 숨은 토큰을 찾으세요. (미끼 주의!)" },
+		{ icon = "📋", t = "3. 토큰 복사 → 해독", d = "토큰을 클릭해 복사하세요. 난독화돼 있으면 Decoder로 원본 키로 되돌립니다." },
+		{ icon = "⚡", t = "4. HackTool로 침투", d = "HackTool에서 대상 선택 → '붙여넣기' → 'EXPLOIT'. 성공하면 의뢰인에게서 보수 입금! 💰" },
+		{ icon = "🛠️", t = "5. 더 강한 도구 / AI", d = "번 돈으로 Tools 상점에서 빠른 해킹툴을 사고, Claude Code(게임패스)를 켜면 AI가 자동으로 해킹해 줍니다." },
 	}
 	local idx = 1
 
