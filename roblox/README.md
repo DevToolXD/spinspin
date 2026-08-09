@@ -50,6 +50,21 @@ local CONFIG = {
 
 툴이 진짜로 동작해야 한다면 `GiveAllTools.server.lua` 를 쓰세요.
 
+## 툴이 "덜" 들어올 때
+
+`GiveAllTools.server.lua` 는 지급되지 않은 툴이 있으면 **사유별로 전부 Output 창에 출력**합니다. 아래 순서로 확인하세요.
+
+| 사유 출력 | 원인 | 처리 |
+|---|---|---|
+| `이름 중복 (SKIP_DUPLICATE_NAMES)` | 이름이 같은 툴을 1개로 합쳐버림 | `SKIP_DUPLICATE_NAMES = false` (기본값) |
+| `캐릭터·NPC 안에 있음` | 마네킹·NPC가 들고 있는 툴을 제외함 | `IGNORE_TOOLS_IN_CHARACTERS = false` (기본값) |
+| `MAX_TOOLS 상한 초과` | 지급 개수 상한에 걸림 | `MAX_TOOLS` 값을 올림 |
+| `복제 실패` | `Archivable = false` 이거나 보호된 인스턴스 | 원본 툴의 `Archivable` 확인 |
+| `다른 Tool 안에 중첩됨` | 툴 안에 툴이 들어있는 구조 | 정상 동작 (원본이 아님) |
+| `이미 누군가의 Backpack 안` | 이미 지급된 사본 | 정상 동작 (원본이 아님) |
+
+마지막에 `게임 안 Tool N개 발견 / 지급 M개` 와 `현재 Backpack 안 Tool = K개` 가 찍히므로, 어느 단계에서 숫자가 줄었는지 바로 알 수 있습니다.
+
 ## 툴이 지급은 됐는데 작동을 안 할 때
 
 원인별 체크리스트입니다. 위에서부터 확인하세요.

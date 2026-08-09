@@ -28,17 +28,18 @@ local CONFIG = {
 	-- 이 키를 누르면 다시 스캔해서 새로 생긴 Tool 도 지급 (nil 이면 비활성화)
 	REBIND_KEY = Enum.KeyCode.P,
 
-	-- 같은 이름의 Tool 은 1개만 지급
-	SKIP_DUPLICATE_NAMES = true,
+	-- 같은 이름의 Tool 을 1개만 지급할지.
+	-- true 로 두면 이름이 겹치는 툴이 통째로 사라집니다. 기본 false.
+	SKIP_DUPLICATE_NAMES = false,
 
-	-- 다른 플레이어가 들고 있는 Tool 은 제외
+	-- 캐릭터·NPC 가 들고 있는 Tool 은 제외
 	IGNORE_TOOLS_IN_CHARACTERS = true,
 
 	-- 화면 우측 상단 알림 표시
 	SHOW_NOTIFICATION = true,
 
 	-- 한 번에 지급할 최대 개수 (툴이 수천 개인 맵에서 렉 방지)
-	MAX_TOOLS = 500,
+	MAX_TOOLS = 2000,
 
 	-- [ 툴이 작동하지 않을 때를 위한 보정 옵션 ] --------------------
 

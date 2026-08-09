@@ -1,18 +1,22 @@
 --!strict
 --[[
-	GiveAllTools.server.lua
+	GiveAllTools.server.lua   (통합 버전: 진단 + 지급)
 	------------------------------------------------------------------
-	현재 게임 안에 존재하는 모든 Tool 을 실제로(서버에서) 지급하는 Script 입니다.
-	ServerStorage 안에 숨겨진 Tool 까지 전부 찾아냅니다.
+	내 게임 안에 넣어둔 모든 Tool 을 찾아서 플레이어에게 지급합니다.
+	문제가 생기면 스스로 원인을 Output 창에 찍어줍니다.
 
-	[ 넣는 위치 ]
-	ServerScriptService 안에 Script(서버 스크립트)로 넣으세요.
+	[ 넣는 방법 — 이대로만 하세요 ]
+	1. Explorer 에서 ServerScriptService 를 우클릭
+	2. Insert Object > Script     ← LocalScript 아님! 반드시 Script
+	3. 안의 내용을 전부 지우고 이 파일 내용을 붙여넣기
+	4. Script 를 선택하고 Properties 에서
+	   - Enabled    = 체크됨
+	   - RunContext = Legacy (또는 Server)
+	5. 상단 Test 탭에서 ▶ Play (F5) 로 실행     ← Run(F8) 아님!
+	6. View > Output 을 열어서 [GiveAllTools] 로그 확인
 
-	[ LocalScript 버전과의 차이 ]
-	- 지급된 Tool 이 서버에도 존재 → 다른 플레이어에게도 보이고, 툴 기능이 정상 동작
-	- ServerStorage / ServerScriptService 안의 Tool 도 검색 가능
-	- 클라이언트에서 키를 눌러 재지급하고 싶으면 CONFIG.ENABLE_REMOTE 를 켜세요.
-	  (ReplicatedStorage 에 GiveAllToolsRequest RemoteEvent 가 자동 생성됩니다)
+	Run(F8) 은 플레이어가 생성되지 않는 모드라 Backpack 자체가 없습니다.
+	반드시 Play(F5) 로 테스트하세요.
 --]]
 
 local CONFIG = {
@@ -22,38 +26,71 @@ local CONFIG = {
 	-- 리스폰할 때마다 다시 지급
 	REGIVE_ON_RESPAWN = true,
 
+	-- StarterGear 에도 넣어서 리스폰해도 유지되게 함
+	USE_STARTER_GEAR = true,
+
+	-- [ 툴이 "덜" 들어올 때 확인할 옵션 ] --------------------------
+
+	-- 같은 이름의 Tool 을 1개만 지급할지.
+	-- true 로 두면 이름이 겹치는 툴이 통째로 사라집니다. 기본 false.
+	SKIP_DUPLICATE_NAMES = false,
+
+	-- NPC / 마네킹처럼 Humanoid 가 있는 모델 안에 놓인 Tool 을 제외할지.
+	-- true 로 두면 전시용 더미가 들고 있는 툴이 빠집니다. 기본 false.
+	IGNORE_TOOLS_IN_CHARACTERS = false,
+
+	-- 한 번에 지급할 최대 개수 (상한에 걸리면 경고를 출력합니다)
+	MAX_TOOLS = 2000,
+
+	-- [ 툴이 작동하지 않을 때를 위한 보정 ] ------------------------
+	FIX_MISSING_HANDLE = true,       -- Handle 없는 툴도 장착 가능하게
+	UNANCHOR_PARTS = true,           -- Anchored 라서 손에 안 붙는 문제 해결
+	ENABLE_DISABLED_SCRIPTS = true,  -- 꺼져있던 내부 스크립트 켜기
+
+	-- 무엇을 어디서 가져왔는지 전부 출력 (문제 해결될 때까지 켜두세요)
+	VERBOSE = true,
+
 	-- 클라이언트가 RemoteEvent 로 재지급을 요청할 수 있게 허용
-	-- (테스트용 플레이스에서만 켜세요. 라이브 게임에서는 악용될 수 있습니다)
+	-- (본인 테스트 플레이스에서만 켜세요)
 	ENABLE_REMOTE = true,
 	REMOTE_NAME = "GiveAllToolsRequest",
-	REMOTE_COOLDOWN = 2, -- 초
-
-	-- 같은 이름의 Tool 은 1개만 지급
-	SKIP_DUPLICATE_NAMES = true,
-
-	-- 한 번에 지급할 최대 개수
-	MAX_TOOLS = 500,
-
-	-- [ 툴이 작동하지 않을 때를 위한 보정 옵션 ] --------------------
-
-	-- Handle 이 없는 Tool 은 RequiresHandle 을 꺼서 장착 가능하게 만듦
-	FIX_MISSING_HANDLE = true,
-
-	-- Workspace 에 놓여있던 툴은 Handle 이 Anchored 라서 손에 안 붙음 → 해제
-	UNANCHOR_PARTS = true,
-
-	-- 보관용 툴은 내부 스크립트가 Disabled 인 경우가 많음 → 켜준다
-	ENABLE_DISABLED_SCRIPTS = true,
-
-	-- 어떤 툴을 어디서 가져왔는지 출력창에 전부 찍기 (문제 추적용)
-	VERBOSE = false,
+	REMOTE_COOLDOWN = 2,
 }
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 --------------------------------------------------------------------
--- 검색할 위치 목록
+-- 0. 실행 환경 자가 진단
+--------------------------------------------------------------------
+print("=====================================================")
+print("[GiveAllTools] 스크립트 실행됨")
+print(("[GiveAllTools]   종류   : %s"):format(script.ClassName))
+print(("[GiveAllTools]   위치   : %s"):format(script.Parent and script.Parent:GetFullName() or "nil"))
+print(("[GiveAllTools]   서버?  : %s"):format(tostring(RunService:IsServer())))
+print("=====================================================")
+
+if not RunService:IsServer() then
+	warn("[GiveAllTools] 서버에서 실행되고 있지 않습니다!")
+	warn("[GiveAllTools] → ServerScriptService 안에 'Script' 로 넣어야 합니다.")
+end
+
+-- Play(F5) 가 아니라 Run(F8) 으로 돌린 경우 감지
+task.delay(8, function()
+	if #Players:GetPlayers() == 0 then
+		warn("=====================================================")
+		warn("[GiveAllTools] 8초가 지났는데 플레이어가 한 명도 없습니다.")
+		warn("[GiveAllTools] Run(F8) 모드로 실행하신 것 같습니다.")
+		warn("[GiveAllTools] → Run 모드는 캐릭터/Backpack 이 생성되지 않아")
+		warn("[GiveAllTools]   툴을 받을 대상 자체가 없습니다.")
+		warn("[GiveAllTools] → 반드시 Play(F5) 로 실행하세요.")
+		warn("=====================================================")
+	end
+end)
+
+--------------------------------------------------------------------
+-- 1. 검색할 위치
 --------------------------------------------------------------------
 local SEARCH_SERVICE_NAMES = {
 	"ServerStorage",
@@ -80,7 +117,7 @@ local function getSearchRoots(): { Instance }
 end
 
 --------------------------------------------------------------------
--- 유틸
+-- 2. 유틸
 --------------------------------------------------------------------
 local function isInsideCharacter(inst: Instance): boolean
 	local model = inst:FindFirstAncestorWhichIsA("Model")
@@ -91,11 +128,6 @@ local function isInsideCharacter(inst: Instance): boolean
 		model = model:FindFirstAncestorWhichIsA("Model")
 	end
 	return false
-end
-
--- 어떤 플레이어의 Backpack 안에 있는 Tool 인지 (원본으로 잡히면 안 됨)
-local function isInsideAnyBackpack(inst: Instance): boolean
-	return inst:FindFirstAncestorOfClass("Backpack") ~= nil
 end
 
 local function safeClone(tool: Tool): Tool?
@@ -123,11 +155,8 @@ local function safeClone(tool: Tool): Tool?
 	return (ok and clone) and (clone :: Tool) or nil
 end
 
---------------------------------------------------------------------
 -- 복제한 Tool 이 실제로 작동하도록 보정
---------------------------------------------------------------------
 local function prepareTool(tool: Tool)
-	-- 1) Handle 이 없으면 장착 자체가 안 되므로 RequiresHandle 을 끈다
 	if CONFIG.FIX_MISSING_HANDLE then
 		local handle = tool:FindFirstChild("Handle")
 		if not (handle and handle:IsA("BasePart")) then
@@ -138,12 +167,10 @@ local function prepareTool(tool: Tool)
 	end
 
 	for _, d in ipairs(tool:GetDescendants()) do
-		-- 2) Anchored 인 파트는 캐릭터 손에 용접되지 않는다
 		if CONFIG.UNANCHOR_PARTS and d:IsA("BasePart") then
 			pcall(function()
 				d.Anchored = false
 			end)
-		-- 3) 보관 상태에서 꺼져 있던 스크립트를 켠다
 		elseif CONFIG.ENABLE_DISABLED_SCRIPTS and d:IsA("BaseScript") then
 			pcall(function()
 				(d :: BaseScript).Enabled = true
@@ -153,11 +180,25 @@ local function prepareTool(tool: Tool)
 end
 
 --------------------------------------------------------------------
--- 게임 안의 모든 원본 Tool 수집 (플레이어에게 지급된 사본은 제외)
+-- 3. 게임 안의 원본 Tool 수집
 --------------------------------------------------------------------
-local function collectSourceTools(): { Tool }
+-- 제외 사유별로 어떤 툴이 빠졌는지 기록해 두는 리포트
+type Report = { [string]: { string } }
+
+local function note(report: Report, reason: string, inst: Instance)
+	local list = report[reason]
+	if not list then
+		list = {}
+		report[reason] = list
+	end
+	table.insert(list, inst:GetFullName())
+end
+
+local function collectSourceTools(): ({ Tool }, Report, number)
 	local tools: { Tool } = {}
 	local seen: { [Instance]: boolean } = {}
+	local report: Report = {}
+	local totalFound = 0
 
 	for _, root in ipairs(getSearchRoots()) do
 		local ok, descendants = pcall(function()
@@ -167,36 +208,74 @@ local function collectSourceTools(): { Tool }
 			continue
 		end
 
+		local foundHere, takenHere = 0, 0
 		for _, inst in ipairs(descendants) do
 			if not inst:IsA("Tool") or seen[inst] then
 				continue
 			end
 			seen[inst] = true
+			foundHere += 1
+			totalFound += 1
 
-			-- Tool 안의 Tool 제외
+			-- Tool 안에 중첩된 Tool 은 원본으로 보지 않는다
 			if inst.Parent and inst.Parent:IsA("Tool") then
+				note(report, "다른 Tool 안에 중첩됨", inst)
 				continue
 			end
-			-- 이미 누군가의 인벤토리/캐릭터에 있는 사본은 원본이 아니므로 제외
-			if isInsideAnyBackpack(inst) or isInsideCharacter(inst) then
+
+			-- 이미 누군가의 인벤토리에 있는 사본
+			if inst:FindFirstAncestorOfClass("Backpack") then
+				note(report, "이미 누군가의 Backpack 안", inst)
+				continue
+			end
+
+			-- NPC / 마네킹이 들고 있는 툴
+			if CONFIG.IGNORE_TOOLS_IN_CHARACTERS and isInsideCharacter(inst) then
+				note(report, "캐릭터·NPC 안에 있음 (IGNORE_TOOLS_IN_CHARACTERS)", inst)
 				continue
 			end
 
 			table.insert(tools, inst)
+			takenHere += 1
+		end
+
+		if CONFIG.VERBOSE and foundHere > 0 then
+			print(("[GiveAllTools] %-20s → 발견 %d개 / 대상 %d개"):format(root.Name, foundHere, takenHere))
 		end
 	end
 
-	return tools
+	return tools, report, totalFound
+end
+
+local function printReport(report: Report)
+	local any = false
+	for reason, list in pairs(report) do
+		any = true
+		warn(("[GiveAllTools] [제외 %d개] %s"):format(#list, reason))
+		for i, path in ipairs(list) do
+			if i > 20 then
+				warn(("[GiveAllTools]      ... 외 %d개"):format(#list - 20))
+				break
+			end
+			warn(("[GiveAllTools]      · %s"):format(path))
+		end
+	end
+	if not any and CONFIG.VERBOSE then
+		print("[GiveAllTools] 제외된 툴 없음.")
+	end
 end
 
 --------------------------------------------------------------------
--- 지급
+-- 4. 지급
 --------------------------------------------------------------------
-local function giveAllTools(player: Player): (number, number)
+local function giveAllTools(player: Player)
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	if not backpack then
-		return 0, 0
+		warn(("[GiveAllTools] %s 의 Backpack 이 아직 없습니다. 지급 취소."):format(player.Name))
+		return
 	end
+
+	local starterGear = CONFIG.USE_STARTER_GEAR and player:FindFirstChild("StarterGear") or nil
 
 	local owned: { [string]: boolean } = {}
 	for _, item in ipairs(backpack:GetChildren()) do
@@ -213,47 +292,88 @@ local function giveAllTools(player: Player): (number, number)
 		end
 	end
 
-	local given, skipped = 0, 0
+	local sources, report, totalFound = collectSourceTools()
+	if #sources == 0 then
+		warn("=====================================================")
+		warn("[GiveAllTools] 이 플레이스 안에 Tool 이 하나도 없습니다.")
+		warn("[GiveAllTools] → 지급할 대상이 없으니 아무것도 안 들어옵니다.")
+		warn("[GiveAllTools] → 툴을 ServerStorage 나 ReplicatedStorage 에")
+		warn("[GiveAllTools]   먼저 넣어두세요. (Toolbox 에서 가져오거나 직접 제작)")
+		warn("=====================================================")
+		return
+	end
 
-	for _, tool in ipairs(collectSourceTools()) do
+	local given = 0
+
+	for index, tool in ipairs(sources) do
 		if given >= CONFIG.MAX_TOOLS then
-			break
+			note(report, ("MAX_TOOLS(%d) 상한 초과"):format(CONFIG.MAX_TOOLS), tool)
+			continue
 		end
 
 		if CONFIG.SKIP_DUPLICATE_NAMES and owned[tool.Name] then
-			skipped += 1
+			note(report, "이름 중복 (SKIP_DUPLICATE_NAMES)", tool)
 			continue
 		end
 
 		local clone = safeClone(tool)
-		if clone then
-			prepareTool(clone)
-			clone.Parent = backpack
-			owned[clone.Name] = true
-			given += 1
-			if CONFIG.VERBOSE then
-				print(("[GiveAllTools]   + %s  (원본: %s)"):format(clone.Name, tool:GetFullName()))
+		if not clone then
+			note(report, "복제 실패 (Archivable / 보호된 인스턴스)", tool)
+			continue
+		end
+
+		prepareTool(clone)
+		clone.Parent = backpack
+		owned[clone.Name] = true
+		given += 1
+
+		-- 리스폰해도 유지되도록 StarterGear 에도 사본을 넣어둔다
+		if starterGear then
+			local spare = safeClone(tool)
+			if spare then
+				prepareTool(spare)
+				spare.Parent = starterGear
 			end
-		else
-			skipped += 1
-			if CONFIG.VERBOSE then
-				warn(("[GiveAllTools]   ! 복제 실패: %s"):format(tool:GetFullName()))
-			end
+		end
+
+		if CONFIG.VERBOSE then
+			print(("[GiveAllTools]   + [%d] %s  (원본: %s)"):format(index, clone.Name, tool:GetFullName()))
 		end
 	end
 
-	print(("[GiveAllTools] %s 에게 %d개 지급 / %d개 건너뜀"):format(player.Name, given, skipped))
-	return given, skipped
+	print("-----------------------------------------------------")
+	print(("[GiveAllTools] %s → 게임 안 Tool %d개 발견 / 지급 %d개"):format(
+		player.Name, totalFound, given))
+
+	if given < totalFound then
+		warn(("[GiveAllTools] %d개가 지급되지 않았습니다. 사유는 아래와 같습니다."):format(totalFound - given))
+		printReport(report)
+	end
+
+	-- 실제로 Backpack 에 들어간 개수를 다시 세어 검증
+	local actual = 0
+	for _, item in ipairs(backpack:GetChildren()) do
+		if item:IsA("Tool") then
+			actual += 1
+		end
+	end
+	print(("[GiveAllTools] 현재 Backpack 안 Tool = %d개"):format(actual))
+	print("-----------------------------------------------------")
 end
 
 --------------------------------------------------------------------
--- 이벤트 연결
+-- 5. 이벤트 연결
 --------------------------------------------------------------------
 local function setupPlayer(player: Player)
+	print(("[GiveAllTools] 플레이어 감지: %s"):format(player.Name))
+
 	if CONFIG.GIVE_ON_JOIN then
-		-- Backpack 이 생성될 때까지 대기
 		task.spawn(function()
-			player:WaitForChild("Backpack", 10)
+			local backpack = player:WaitForChild("Backpack", 15)
+			if not backpack then
+				warn(("[GiveAllTools] %s 의 Backpack 을 15초 안에 찾지 못했습니다."):format(player.Name))
+				return
+			end
 			giveAllTools(player)
 		end)
 	end
@@ -271,6 +391,9 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 Players.PlayerAdded:Connect(setupPlayer)
 
+--------------------------------------------------------------------
+-- 6. 클라이언트 재지급 요청 (선택)
+--------------------------------------------------------------------
 if CONFIG.ENABLE_REMOTE then
 	local existing = ReplicatedStorage:FindFirstChild(CONFIG.REMOTE_NAME)
 	local remote: RemoteEvent
