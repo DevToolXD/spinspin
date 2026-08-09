@@ -33,6 +33,20 @@ local CONFIG = {
 
 	-- 한 번에 지급할 최대 개수
 	MAX_TOOLS = 500,
+
+	-- [ 툴이 작동하지 않을 때를 위한 보정 옵션 ] --------------------
+
+	-- Handle 이 없는 Tool 은 RequiresHandle 을 꺼서 장착 가능하게 만듦
+	FIX_MISSING_HANDLE = true,
+
+	-- Workspace 에 놓여있던 툴은 Handle 이 Anchored 라서 손에 안 붙음 → 해제
+	UNANCHOR_PARTS = true,
+
+	-- 보관용 툴은 내부 스크립트가 Disabled 인 경우가 많음 → 켜준다
+	ENABLE_DISABLED_SCRIPTS = true,
+
+	-- 어떤 툴을 어디서 가져왔는지 출력창에 전부 찍기 (문제 추적용)
+	VERBOSE = false,
 }
 
 local Players = game:GetService("Players")
@@ -110,6 +124,35 @@ local function safeClone(tool: Tool): Tool?
 end
 
 --------------------------------------------------------------------
+-- 복제한 Tool 이 실제로 작동하도록 보정
+--------------------------------------------------------------------
+local function prepareTool(tool: Tool)
+	-- 1) Handle 이 없으면 장착 자체가 안 되므로 RequiresHandle 을 끈다
+	if CONFIG.FIX_MISSING_HANDLE then
+		local handle = tool:FindFirstChild("Handle")
+		if not (handle and handle:IsA("BasePart")) then
+			pcall(function()
+				tool.RequiresHandle = false
+			end)
+		end
+	end
+
+	for _, d in ipairs(tool:GetDescendants()) do
+		-- 2) Anchored 인 파트는 캐릭터 손에 용접되지 않는다
+		if CONFIG.UNANCHOR_PARTS and d:IsA("BasePart") then
+			pcall(function()
+				d.Anchored = false
+			end)
+		-- 3) 보관 상태에서 꺼져 있던 스크립트를 켠다
+		elseif CONFIG.ENABLE_DISABLED_SCRIPTS and d:IsA("BaseScript") then
+			pcall(function()
+				(d :: BaseScript).Enabled = true
+			end)
+		end
+	end
+end
+
+--------------------------------------------------------------------
 -- 게임 안의 모든 원본 Tool 수집 (플레이어에게 지급된 사본은 제외)
 --------------------------------------------------------------------
 local function collectSourceTools(): { Tool }
@@ -184,11 +227,18 @@ local function giveAllTools(player: Player): (number, number)
 
 		local clone = safeClone(tool)
 		if clone then
+			prepareTool(clone)
 			clone.Parent = backpack
 			owned[clone.Name] = true
 			given += 1
+			if CONFIG.VERBOSE then
+				print(("[GiveAllTools]   + %s  (원본: %s)"):format(clone.Name, tool:GetFullName()))
+			end
 		else
 			skipped += 1
+			if CONFIG.VERBOSE then
+				warn(("[GiveAllTools]   ! 복제 실패: %s"):format(tool:GetFullName()))
+			end
 		end
 	end
 
