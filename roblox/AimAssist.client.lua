@@ -17,12 +17,12 @@
 ----------------------------------------------------------------------
 local CONFIG = {
 	StartEnabled    = false,                 -- true면 시작하자마자 ON 상태
-	ToggleKey       = Enum.KeyCode.RightAlt, -- 버튼 대신 쓸 단축키 (nil이면 사용 안 함)
+	ToggleKey       = Enum.KeyCode.Q,        -- 버튼 대신 쓸 단축키 (nil이면 사용 안 함)
 	AimPartName     = "Head",                -- 조준할 부위 이름
 	MaxDistance     = 300,                   -- 이 거리(스터드) 밖의 플레이어는 무시
 	TeamCheck       = true,                  -- 같은 팀은 대상에서 제외
 	WallCheck       = true,                  -- 벽에 가려진 대상은 제외
-	Smoothness      = 14,                    -- 조준이 붙는 속도 (클수록 빠름, 100이면 거의 즉시)
+	Smoothness      = 0,                     -- 0이면 즉시 조준(스냅). 값을 올릴수록 부드럽게 따라감
 	RotateCharacter = false,                 -- 캐릭터 몸통도 대상 쪽으로 돌릴지
 }
 
@@ -176,7 +176,8 @@ local panel = create("Frame", {
 	Name = "Panel",
 	Active = true, -- 드래그로 옮길 수 있게
 	Size = UDim2.fromOffset(226, 168),
-	Position = UDim2.new(0, 24, 0.5, -84),
+	AnchorPoint = Vector2.new(1, 0), -- 오른쪽 위 모서리 기준으로 배치
+	Position = UDim2.new(1, -24, 0, 24),
 	BackgroundColor3 = Color3.fromRGB(24, 26, 33),
 	BackgroundTransparency = 0.06,
 	BorderSizePixel = 0,
@@ -361,7 +362,7 @@ local function onRenderStep(deltaTime)
 	end
 
 	-- 카메라 "위치"는 기본 카메라가 계산한 값을 그대로 씁니다(캐릭터를 따라감).
-	-- 우리는 "회전"만 목표 쪽으로 서서히 돌립니다.
+	-- 우리는 "회전"만 목표 쪽으로 돌립니다.
 	local origin = camera.CFrame.Position
 	local direction = targetPart.Position - origin
 	if direction.Magnitude < 0.05 then
@@ -373,8 +374,12 @@ local function onRenderStep(deltaTime)
 		aimRotation = camera.CFrame.Rotation
 	end
 
-	-- 프레임레이트와 무관한 보간 계수
-	local alpha = 1 - math.exp(-CONFIG.Smoothness * deltaTime)
+	-- Smoothness가 0이면 보간 없이 바로 목표 회전으로 스냅.
+	-- 0보다 크면 프레임레이트와 무관하게 같은 속도로 따라갑니다.
+	local alpha = 1
+	if CONFIG.Smoothness > 0 then
+		alpha = 1 - math.exp(-CONFIG.Smoothness * deltaTime)
+	end
 	aimRotation = aimRotation:Lerp(goalRotation, alpha)
 	camera.CFrame = CFrame.new(origin) * aimRotation
 
