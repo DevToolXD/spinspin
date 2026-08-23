@@ -2,11 +2,18 @@
 	AimAssist — 조준 보조 (LocalScript)
 	==================================================================
 	배치 위치 : StarterPlayer > StarterPlayerScripts
-	스크립트   : LocalScript
+	스크립트   : LocalScript  (Script 아님!)
 
-	화면에 UI 패널이 뜨고, ON 버튼을 누르면 가장 가까운 플레이어의
-	머리(Head)를 향해 카메라가 계속 조준됩니다. OFF를 누르면
-	기본 카메라 조작으로 돌아갑니다.
+	화면 오른쪽 위에 패널이 뜨고, ON(또는 Q)을 누르면 내 카메라에서
+	가장 가까운 플레이어의 머리(Head)를 즉시 조준합니다.
+	한 번 잡은 대상은 죽거나 아주 멀어지기 전까지 계속 따라갑니다.
+
+	동작하지 않으면 Output 창(View > Output)을 먼저 확인하세요.
+	로드되면 "[AimAssist] 로드됨 ..." 이 한 줄 찍힙니다. 그 줄이 없으면
+	스크립트가 아예 실행되지 않은 것이고, 원인은 대부분 둘 중 하나입니다.
+	  1) Script로 만들었다  -> LocalScript로 다시 만들어야 합니다
+	  2) 위치가 틀렸다      -> StarterPlayer > StarterPlayerScripts 안이어야 합니다
+	패널은 떴는데 조준이 안 되면 패널의 상태 문구가 이유를 알려줍니다.
 
 	※ 본인이 만든 게임에 넣어서 쓰는 조준 보조(락온) 기능입니다.
 	   남의 게임에 주입해서 쓰는 건 Roblox 이용 약관 위반입니다.
@@ -22,10 +29,17 @@ local CONFIG = {
 	MaxDistance     = 300,                   -- 새 대상을 고를 때 이 거리(스터드) 밖은 무시
 	DropDistance    = 800,                   -- 이미 조준 중인 대상은 이만큼 멀어져야 놓아줌
 	TeamCheck       = true,                  -- 같은 팀은 대상에서 제외
-	WallCheck       = true,                  -- 벽에 가려진 대상은 제외
+	WallCheck       = false,                 -- 벽에 가린 대상 제외. 아래 주석을 꼭 읽어보세요
 	Smoothness      = 0,                     -- 0이면 즉시 조준(스냅). 값을 올릴수록 부드럽게 따라감
 	RotateCharacter = false,                 -- 캐릭터 몸통도 대상 쪽으로 돌릴지
+	Debug           = false,                 -- true면 대상 탐색 결과를 Output에 찍음
 }
+
+--[[ WallCheck를 기본으로 꺼둔 이유
+	레이캐스트는 CanCollide가 꺼진 장식물이나 투명 파트에도 걸립니다
+	(CanQuery가 켜져 있으면 잡힘). 그래서 맵에 따라 "분명히 보이는데
+	계속 벽에 가렸다고 나오는" 상황이 생깁니다. 켜고 싶으면 true로 바꾸되,
+	대상이 안 잡히면 이것부터 다시 꺼보세요. ]]
 
 -- 대상이 없을 때 새로 찾아보는 주기(초). 이미 대상을 잡고 있으면 탐색하지 않습니다.
 local ACQUIRE_INTERVAL = 0.15
@@ -38,11 +52,24 @@ local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+if not LocalPlayer then
+	warn("[AimAssist] LocalPlayer가 없습니다. 이 스크립트는 반드시 LocalScript여야 하고, "
+		.. "StarterPlayer > StarterPlayerScripts 안에 있어야 합니다.")
+	return
+end
+
+local PlayerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	or LocalPlayer:WaitForChild("PlayerGui", 15)
+if not PlayerGui then
+	warn("[AimAssist] PlayerGui를 찾지 못했습니다.")
+	return
+end
 
 local RENDER_STEP_NAME = "AimAssist_Camera"
--- 기본 카메라(우선순위 200)가 CFrame을 쓴 "다음"에 실행돼야 우리 조준이 이깁니다.
-local AIM_PRIORITY = Enum.RenderPriority.Camera.Value + 1
+-- 기본 카메라는 우선순위 200에서 매 프레임 Camera.CFrame을 씁니다.
+-- 그보다 뒤에서 실행돼야 우리 조준이 덮어씁니다. (+10은 다른 카메라
+-- 스크립트가 201을 쓰고 있을 경우를 대비한 여유)
+local AIM_PRIORITY = Enum.RenderPriority.Camera.Value + 10
 
 local COLOR_ON    = Color3.fromRGB(72, 214, 128)
 local COLOR_OFF   = Color3.fromRGB(74, 80, 94)
@@ -59,12 +86,19 @@ local aimRotation = nil
 
 local autoRotateOverridden = false
 
+-- 마지막 탐색에서 후보들이 왜 걸러졌는지. 패널에 이유를 띄우는 데 씁니다.
+local scan = { others = 0, candidates = 0, sameTeam = 0, tooFar = 0, blocked = 0 }
+
 ----------------------------------------------------------------------
 -- 대상 찾기
 ----------------------------------------------------------------------
 local wallParams = RaycastParams.new()
 wallParams.FilterType = Enum.RaycastFilterType.Exclude
 wallParams.IgnoreWater = true
+-- 구버전 클라이언트에는 없는 속성이라, 없더라도 스크립트가 죽지 않게 감쌉니다.
+pcall(function()
+	wallParams.RespectCanCollide = true
+end)
 
 -- 살아있고 조준 가능한 캐릭터면 (조준부위, 휴머노이드, 캐릭터)를 돌려줍니다.
 local function getAimableParts(player)
@@ -118,6 +152,8 @@ local function isSameTeam(player)
 end
 
 local function findNearestPlayer()
+	scan.others, scan.candidates, scan.sameTeam, scan.tooFar, scan.blocked = 0, 0, 0, 0, 0
+
 	local origin = getOrigin()
 	if not origin then
 		return nil, nil, 0
@@ -126,20 +162,54 @@ local function findNearestPlayer()
 	local bestPlayer, bestPart, bestDistance = nil, nil, CONFIG.MaxDistance
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and not isSameTeam(player) then
+		if player ~= LocalPlayer then
+			scan.others += 1
+
 			local aimPart, _, character = getAimableParts(player)
-			if aimPart then
+			if not aimPart then
+				-- 죽었거나 아직 스폰 전
+			elseif isSameTeam(player) then
+				scan.sameTeam += 1
+			else
+				scan.candidates += 1
 				local distance = (aimPart.Position - origin).Magnitude
-				if distance < bestDistance then
-					if not CONFIG.WallCheck or hasLineOfSight(origin, aimPart, character) then
-						bestPlayer, bestPart, bestDistance = player, aimPart, distance
-					end
+
+				if distance >= CONFIG.MaxDistance then
+					scan.tooFar += 1
+				elseif CONFIG.WallCheck and not hasLineOfSight(origin, aimPart, character) then
+					scan.blocked += 1
+				elseif distance < bestDistance then
+					bestPlayer, bestPart, bestDistance = player, aimPart, distance
 				end
 			end
 		end
 	end
 
+	if CONFIG.Debug then
+		print(string.format(
+			"[AimAssist] 탐색: 다른 플레이어 %d명 / 후보 %d명 / 같은 팀 %d / 사거리 밖 %d / 벽 %d -> %s",
+			scan.others, scan.candidates, scan.sameTeam, scan.tooFar, scan.blocked,
+			bestPlayer and bestPlayer.Name or "없음"
+		))
+	end
+
 	return bestPlayer, bestPart, bestDistance
+end
+
+-- 대상을 못 잡은 이유를 사람이 읽을 수 있게. "왜 안 되지"를 패널에서 바로 봅니다.
+local function noTargetReason()
+	if scan.others == 0 then
+		return "다른 플레이어 없음\nStudio에서 2명 이상으로 테스트하세요"
+	elseif scan.candidates == 0 and scan.sameTeam > 0 then
+		return string.format("같은 팀만 있음 (%d명)", scan.sameTeam)
+	elseif scan.candidates == 0 then
+		return "살아있는 대상 없음"
+	elseif scan.blocked > 0 then
+		return string.format("벽에 가림 (%d명)\nWallCheck를 꺼보세요", scan.blocked)
+	elseif scan.tooFar > 0 then
+		return string.format("사거리 밖 (%d명)\nMaxDistance를 늘려보세요", scan.tooFar)
+	end
+	return "조준할 대상 없음"
 end
 
 -- 이미 조준 중인 대상을 계속 붙잡고 있을지 판단합니다.
@@ -192,6 +262,7 @@ local screenGui = create("ScreenGui", {
 	Name = "AimAssistGui",
 	ResetOnSpawn = false,
 	IgnoreGuiInset = true,
+	DisplayOrder = 100,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	Parent = PlayerGui,
 })
@@ -199,7 +270,7 @@ local screenGui = create("ScreenGui", {
 local panel = create("Frame", {
 	Name = "Panel",
 	Active = true, -- 드래그로 옮길 수 있게
-	Size = UDim2.fromOffset(226, 168),
+	Size = UDim2.fromOffset(226, 184),
 	AnchorPoint = Vector2.new(1, 0), -- 오른쪽 위 모서리 기준으로 배치
 	Position = UDim2.new(1, -24, 0, 24),
 	BackgroundColor3 = Color3.fromRGB(24, 26, 33),
@@ -258,7 +329,7 @@ local toggleButton = create("TextButton", {
 local statusLabel = create("TextLabel", {
 	Name = "Status",
 	LayoutOrder = 3,
-	Size = UDim2.new(1, 0, 0, 32),
+	Size = UDim2.new(1, 0, 0, 46),
 	BackgroundTransparency = 1,
 	Font = Enum.Font.Gotham,
 	Text = "대기 중",
@@ -328,7 +399,7 @@ local function updateStatus()
 		text = string.format("대상: %s\n거리 %d스터드", targetPlayer.DisplayName, math.floor(targetDistance))
 		color = COLOR_ON
 	else
-		text, color = "조준할 대상 없음", COLOR_MUTED
+		text, color = noTargetReason(), COLOR_MUTED
 	end
 
 	if text ~= lastStatusText then
@@ -385,7 +456,7 @@ local function onRenderStep(deltaTime)
 		targetDistance = (targetPart.Position - camera.CFrame.Position).Magnitude
 	else
 		if targetPlayer then
-			-- 방금 놓쳤으면 다음 줄에서 곧바로 새 대상을 찾도록 타이머를 채워둡니다.
+			-- 방금 놓쳤으면 아래에서 곧바로 새 대상을 찾도록 타이머를 채워둡니다.
 			targetPlayer, targetPart, targetDistance = nil, nil, 0
 			acquireClock = ACQUIRE_INTERVAL
 		end
@@ -478,6 +549,11 @@ LocalPlayer.CharacterAdded:Connect(function()
 	targetPlayer, targetPart, targetDistance = nil, nil, 0
 	aimRotation = nil
 end)
+
+print(string.format(
+	"[AimAssist] 로드됨 - %s 키 또는 화면 오른쪽 위 패널의 ON 버튼으로 켜세요.",
+	CONFIG.ToggleKey and CONFIG.ToggleKey.Name or "(단축키 없음)"
+))
 
 if CONFIG.StartEnabled then
 	setEnabled(true)
