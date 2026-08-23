@@ -27,6 +27,12 @@ local function looksAt(camera, targetPos)
 	return ok, string.format("look=%s  want=%s", tostring(look), tostring(want))
 end
 
+-- 켠 다음 우클릭을 누른 상태로 만듭니다 (이제 조준은 홀드 중에만 걸림)
+local function aimOn(W)
+	W.pressKey(Enum.KeyCode.Q)
+	W.holdAim(true)
+end
+
 local function statusOf(W)
 	local gui = W.findGui("AimAssistGui")
 	local panel = gui and gui:FindFirstChild("Panel")
@@ -102,7 +108,7 @@ do
 	local near = W.addPlayer("Near", Vector3.new(100, 5, 0))
 	local far = W.addPlayer("Far", Vector3.new(200, 5, 0))
 	loadAimAssist()
-	W.pressKey(Enum.KeyCode.Q)
+	aimOn(W)
 
 	W.step(1 / 60)
 
@@ -127,7 +133,7 @@ do
 	local a = W.addPlayer("A", Vector3.new(100, 5, 0))
 	local b = W.addPlayer("B", Vector3.new(200, 5, 0))
 	loadAimAssist()
-	W.pressKey(Enum.KeyCode.Q)
+	aimOn(W)
 	W.step(1 / 60)
 	check("처음엔 가까운 A를 잡음", statusOf(W):find("A") ~= nil, statusOf(W))
 
@@ -156,7 +162,7 @@ do
 	local a = W.addPlayer("A", Vector3.new(100, 5, 0))
 	local b = W.addPlayer("B", Vector3.new(200, 5, 0))
 	loadAimAssist()
-	W.pressKey(Enum.KeyCode.Q)
+	aimOn(W)
 	W.step(1 / 60)
 	check("A를 잡음", statusOf(W):find("A") ~= nil, statusOf(W))
 
@@ -183,7 +189,7 @@ do
 		local W = World.build({ cameraPos = Vector3.new(0, 5, 0), blocked = true })
 		W.addPlayer("A", Vector3.new(100, 5, 0))
 		loadAimAssist()
-		W.pressKey(Enum.KeyCode.Q)
+		aimOn(W)
 		for _ = 1, 30 do W.step(1 / 60) end
 		check("벽에 가리면 새 대상을 잡지 않고 이유를 표시",
 			statusOf(W) and statusOf(W):find("벽에 가림") ~= nil, statusOf(W))
@@ -204,7 +210,7 @@ do
 		local W = World.build({ cameraPos = Vector3.new(0, 5, 0), blocked = true })
 		local a = W.addPlayer("A", Vector3.new(100, 5, 0))
 		loadAimAssist()
-		W.pressKey(Enum.KeyCode.Q)
+		aimOn(W)
 		for _ = 1, 30 do W.step(1 / 60) end
 		check("WallCheck 기본 off면 벽이 있어도 조준", statusOf(W):find("A") ~= nil, statusOf(W))
 		check("레이캐스트를 아예 돌리지 않음", W.raycastCalls == 0, W.raycastCalls)
@@ -216,14 +222,14 @@ do
 	W2.addPlayer("Mate", Vector3.new(50, 5, 0), team)
 	W2.addPlayer("Enemy", Vector3.new(150, 5, 0), { Name = "Blue" })
 	loadAimAssist()
-	W2.pressKey(Enum.KeyCode.Q)
+	aimOn(W2)
 	for _ = 1, 30 do W2.step(1 / 60) end
 	check("같은 팀은 건너뛰고 적을 잡음", statusOf(W2):find("Enemy") ~= nil, statusOf(W2))
 
 	local W3 = World.build({ cameraPos = Vector3.new(0, 5, 0), myTeam = team })
 	W3.addPlayer("Mate", Vector3.new(50, 5, 0), team)
 	loadAimAssist()
-	W3.pressKey(Enum.KeyCode.Q)
+	aimOn(W3)
 	for _ = 1, 30 do W3.step(1 / 60) end
 	check("같은 팀뿐이면 이유를 표시",
 		statusOf(W3) and statusOf(W3):find("같은 팀만 있음") ~= nil, statusOf(W3))
@@ -232,7 +238,7 @@ do
 	local W4 = World.build({ cameraPos = Vector3.new(0, 5, 0) })
 	W4.addPlayer("Distant", Vector3.new(2000, 5, 0))
 	loadAimAssist()
-	W4.pressKey(Enum.KeyCode.Q)
+	aimOn(W4)
 	for _ = 1, 30 do W4.step(1 / 60) end
 	check("사거리 밖이면 이유를 표시",
 		statusOf(W4) and statusOf(W4):find("사거리 밖") ~= nil, statusOf(W4))
@@ -244,7 +250,7 @@ do
 	local W = World.build({ cameraPos = Vector3.new(0, 5, 0), defaultCameraLook = Vector3.new(0, 0, 1) })
 	local a = W.addPlayer("A", Vector3.new(100, 5, 0))
 	loadAimAssist()
-	W.pressKey(Enum.KeyCode.Q)
+	aimOn(W)
 	W.step(1 / 60)
 	check("ON 상태에서 조준", (looksAt(W.camera, a.Character:FindFirstChild("Head").Position)), "조준 실패")
 
@@ -258,7 +264,7 @@ do
 	-- 아무도 없을 때
 	local W2 = World.build({ cameraPos = Vector3.new(0, 5, 0) })
 	loadAimAssist()
-	W2.pressKey(Enum.KeyCode.Q)
+	aimOn(W2)
 	for _ = 1, 10 do W2.step(1 / 60) end
 	check("혼자면 '다른 플레이어 없음' 진단 표시",
 		statusOf(W2) and statusOf(W2):find("다른 플레이어 없음") ~= nil, statusOf(W2))
@@ -268,7 +274,7 @@ do
 	W3.addPlayer("Loading", nil)
 	W3.addPlayer("Real", Vector3.new(80, 5, 0))
 	loadAimAssist()
-	W3.pressKey(Enum.KeyCode.Q)
+	aimOn(W3)
 	local ok3, err3 = pcall(function()
 		for _ = 1, 10 do W3.step(1 / 60) end
 	end)
@@ -283,7 +289,7 @@ do
 	W.addPlayer("A", Vector3.new(100, 5, 0))
 	W.addPlayer("B", Vector3.new(200, 5, 0))
 	loadAimAssist()
-	W.pressKey(Enum.KeyCode.Q)
+	aimOn(W)
 	W.step(1 / 60)
 	local afterAcquire = W.raycastCalls
 	for _ = 1, 120 do W.step(1 / 60) end
@@ -293,7 +299,68 @@ do
 end
 
 --=====================================================================
-section("9. 진단 출력")
+section("9. 우클릭 홀드")
+do
+	local camPos = Vector3.new(0, 5, 0)
+	local W = World.build({ cameraPos = camPos, defaultCameraLook = Vector3.new(0, 0, 1) })
+	local a = W.addPlayer("A", Vector3.new(100, 5, 0))
+	local headPos = a.Character:FindFirstChild("Head").Position
+	loadAimAssist()
+
+	-- ON만 하고 우클릭은 안 누른 상태
+	W.pressKey(Enum.KeyCode.Q)
+	for _ = 1, 10 do W.step(1 / 60) end
+	local look = W.camera.CFrame.LookVector
+	check("ON이어도 우클릭 안 하면 카메라를 건드리지 않음",
+		approx(look.X, 0, 1e-3) and approx(look.Z, 1, 1e-3), tostring(look))
+	check("안내 문구 표시", statusOf(W) == "우클릭하는 동안 조준", statusOf(W))
+	check("우클릭 전에는 탐색도 하지 않음", W.raycastCalls == 0, W.raycastCalls)
+
+	-- 우클릭을 누르면 그 프레임에 바로 조준
+	W.holdAim(true)
+	W.step(1 / 60)
+	check("우클릭한 첫 프레임에 바로 조준", (looksAt(W.camera, headPos)), tostring(W.camera.CFrame))
+	check("대상 표시", statusOf(W):find("A") ~= nil, statusOf(W))
+
+	-- 놓으면 즉시 기본 카메라로
+	W.holdAim(false)
+	W.step(1 / 60)
+	local look2 = W.camera.CFrame.LookVector
+	check("놓으면 즉시 기본 카메라 방향으로 복귀",
+		approx(look2.X, 0, 1e-3) and approx(look2.Z, 1, 1e-3), tostring(look2))
+	check("놓으면 대상도 해제", statusOf(W) == "우클릭하는 동안 조준", statusOf(W))
+
+	-- 다시 누르면 그 시점의 가장 가까운 대상을 새로 잡음
+	local b = W.addPlayer("B", Vector3.new(20, 5, 0))
+	W.holdAim(true)
+	W.step(1 / 60)
+	check("다시 누르면 그때 가장 가까운 B를 새로 잡음", statusOf(W):find("B") ~= nil, statusOf(W))
+
+	-- 누르고 있는 동안에는 더 가까운 상대가 나타나도 유지
+	a.Character:FindFirstChild("Head").Position = Vector3.new(5, 5, 0)
+	for _ = 1, 60 do W.step(1 / 60) end
+	check("누르고 있는 동안에는 대상 고정 유지", statusOf(W):find("B") ~= nil, statusOf(W))
+
+	-- OFF로 끄면 우클릭을 누르고 있어도 조준 안 됨
+	W.pressKey(Enum.KeyCode.Q)
+	W.step(1 / 60)
+	local look3 = W.camera.CFrame.LookVector
+	check("OFF면 우클릭 중이어도 조준 안 함",
+		approx(look3.X, 0, 1e-3) and approx(look3.Z, 1, 1e-3), tostring(look3))
+	check("OFF 상태 표시", statusOf(W) == "대기 중", statusOf(W))
+
+	-- 마우스 없는 기기에서는 ON만으로 조준
+	local W2 = World.build({ cameraPos = camPos, mouseEnabled = false })
+	local c = W2.addPlayer("C", Vector3.new(100, 5, 0))
+	loadAimAssist()
+	W2.pressKey(Enum.KeyCode.Q)
+	W2.step(1 / 60)
+	check("마우스 없는 기기(모바일)에서는 ON만으로 조준",
+		(looksAt(W2.camera, c.Character:FindFirstChild("Head").Position)), tostring(W2.camera.CFrame))
+end
+
+--=====================================================================
+section("10. 진단 출력")
 do
 	local W = World.build({ cameraPos = Vector3.new(0, 5, 0) })
 	PRINTS = {}

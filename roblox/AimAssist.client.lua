@@ -4,9 +4,11 @@
 	배치 위치 : StarterPlayer > StarterPlayerScripts
 	스크립트   : LocalScript  (Script 아님!)
 
-	화면 오른쪽 위에 패널이 뜨고, ON(또는 Q)을 누르면 내 카메라에서
-	가장 가까운 플레이어의 머리(Head)를 즉시 조준합니다.
-	한 번 잡은 대상은 죽거나 아주 멀어지기 전까지 계속 따라갑니다.
+	화면 오른쪽 위에 패널이 뜨고, ON(또는 Q)으로 기능을 켭니다.
+	켜져 있어도 가만히 있으면 아무 일도 없고, **마우스 우클릭을 누르고
+	있는 동안에만** 내 카메라에서 가장 가까운 플레이어의 머리(Head)를
+	즉시 조준합니다. 버튼을 놓으면 곧바로 기본 카메라로 돌아갑니다.
+	누르고 있는 동안 잡은 대상은 죽거나 아주 멀어지기 전까지 유지됩니다.
 
 	동작하지 않으면 Output 창(View > Output)을 먼저 확인하세요.
 	로드되면 "[AimAssist] 로드됨 ..." 이 한 줄 찍힙니다. 그 줄이 없으면
@@ -24,7 +26,10 @@
 ----------------------------------------------------------------------
 local CONFIG = {
 	StartEnabled    = false,                 -- true면 시작하자마자 ON 상태
-	ToggleKey       = Enum.KeyCode.Q,        -- 버튼 대신 쓸 단축키 (nil이면 사용 안 함)
+	ToggleKey       = Enum.KeyCode.Q,        -- 켜고 끄는 단축키 (nil이면 사용 안 함)
+	HoldToAim       = true,                  -- true면 아래 버튼을 누르고 있는 동안에만 조준
+	AimButton       = Enum.UserInputType.MouseButton2, -- 조준을 거는 버튼 (기본: 우클릭)
+	KeepTargetOnRelease = false,             -- true면 버튼을 놓아도 대상을 기억했다가 다시 조준
 	AimPartName     = "Head",                -- 조준할 부위 이름
 	MaxDistance     = 300,                   -- 새 대상을 고를 때 이 거리(스터드) 밖은 무시
 	DropDistance    = 800,                   -- 이미 조준 중인 대상은 이만큼 멀어져야 놓아줌
@@ -76,6 +81,7 @@ local COLOR_OFF   = Color3.fromRGB(74, 80, 94)
 local COLOR_MUTED = Color3.fromRGB(148, 155, 172)
 
 local enabled = false
+local holding = false -- 조준 버튼(우클릭)을 지금 누르고 있는지
 
 local targetPlayer, targetPart, targetDistance = nil, nil, 0
 local acquireClock = 0
@@ -196,6 +202,21 @@ local function findNearestPlayer()
 	return bestPlayer, bestPart, bestDistance
 end
 
+-- 조준 버튼을 누르고 있는지. 매 프레임 실제 눌림 상태를 직접 읽습니다.
+-- InputBegan/InputEnded로 직접 세면 창 밖으로 나갔다 오거나 alt+tab 했을 때
+-- 눌린 채로 남는 경우가 있어서, 폴링이 더 안전합니다.
+local function isHoldingAim()
+	if not CONFIG.HoldToAim then
+		return true
+	end
+	-- 마우스가 없는 기기(모바일 등)에서는 우클릭 자체가 불가능하므로
+	-- ON인 동안 계속 조준합니다.
+	if not UserInputService.MouseEnabled then
+		return true
+	end
+	return UserInputService:IsMouseButtonPressed(CONFIG.AimButton)
+end
+
 -- 대상을 못 잡은 이유를 사람이 읽을 수 있게. "왜 안 되지"를 패널에서 바로 봅니다.
 local function noTargetReason()
 	if scan.others == 0 then
@@ -244,6 +265,20 @@ end
 ----------------------------------------------------------------------
 -- UI 패널
 ----------------------------------------------------------------------
+local HINT_TEXT
+do
+	local parts = {}
+	if CONFIG.ToggleKey then
+		table.insert(parts, CONFIG.ToggleKey.Name .. ": 켜기/끄기")
+	end
+	if CONFIG.HoldToAim then
+		local buttonName = CONFIG.AimButton == Enum.UserInputType.MouseButton2
+			and "우클릭" or CONFIG.AimButton.Name
+		table.insert(parts, buttonName .. ": 조준")
+	end
+	HINT_TEXT = #parts > 0 and table.concat(parts, "   ·   ") or "드래그해서 옮길 수 있어요"
+end
+
 local function create(className, props, children)
 	local instance = Instance.new(className)
 	for key, value in pairs(props) do
@@ -347,7 +382,7 @@ create("TextLabel", {
 	Size = UDim2.new(1, 0, 0, 14),
 	BackgroundTransparency = 1,
 	Font = Enum.Font.Gotham,
-	Text = CONFIG.ToggleKey and ("단축키: " .. CONFIG.ToggleKey.Name) or "드래그해서 옮길 수 있어요",
+	Text = HINT_TEXT,
 	TextSize = 11,
 	TextColor3 = Color3.fromRGB(104, 111, 128),
 	TextXAlignment = Enum.TextXAlignment.Left,
@@ -395,6 +430,8 @@ local function updateStatus()
 	local text, color
 	if not enabled then
 		text, color = "대기 중", COLOR_MUTED
+	elseif not holding then
+		text, color = "우클릭하는 동안 조준", COLOR_MUTED
 	elseif targetPlayer then
 		text = string.format("대상: %s\n거리 %d스터드", targetPlayer.DisplayName, math.floor(targetDistance))
 		color = COLOR_ON
@@ -448,6 +485,18 @@ end
 local function onRenderStep(deltaTime)
 	local camera = workspace.CurrentCamera
 	if not camera then
+		return
+	end
+
+	holding = isHoldingAim()
+	if not holding then
+		-- 버튼을 놓고 있는 동안은 카메라를 건드리지 않고 기본 카메라에 맡깁니다.
+		if not CONFIG.KeepTargetOnRelease then
+			targetPlayer, targetPart, targetDistance = nil, nil, 0
+		end
+		aimRotation = nil
+		acquireClock = ACQUIRE_INTERVAL -- 다시 누르면 곧바로 탐색
+		updateStatus()
 		return
 	end
 
@@ -515,12 +564,14 @@ local function setEnabled(value)
 	if enabled then
 		acquireClock = ACQUIRE_INTERVAL -- 켜자마자 바로 대상 탐색
 		aimRotation = nil
+		holding = isHoldingAim()
 		RunService:BindToRenderStep(RENDER_STEP_NAME, AIM_PRIORITY, onRenderStep)
 	else
 		RunService:UnbindFromRenderStep(RENDER_STEP_NAME)
 		restoreAutoRotate()
 		targetPlayer, targetPart, targetDistance = nil, nil, 0
 		aimRotation = nil
+		holding = false
 	end
 
 	toggleButton.Text = enabled and "ON" or "OFF"
@@ -551,8 +602,9 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 print(string.format(
-	"[AimAssist] 로드됨 - %s 키 또는 화면 오른쪽 위 패널의 ON 버튼으로 켜세요.",
-	CONFIG.ToggleKey and CONFIG.ToggleKey.Name or "(단축키 없음)"
+	"[AimAssist] 로드됨 - %s 키 또는 화면 오른쪽 위 패널의 ON 버튼으로 켠 뒤, %s",
+	CONFIG.ToggleKey and CONFIG.ToggleKey.Name or "(단축키 없음)",
+	CONFIG.HoldToAim and "마우스 우클릭을 누르고 있으면 조준됩니다." or "바로 조준됩니다."
 ))
 
 if CONFIG.StartEnabled then

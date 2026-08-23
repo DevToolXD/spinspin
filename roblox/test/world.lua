@@ -116,6 +116,15 @@ function World.build(opts)
 	------------------------------------------------ UserInputService
 	local UserInputService = Instance.new("UserInputService")
 	UserInputService.Name = "UserInputService"
+	UserInputService.MouseEnabled = (opts.mouseEnabled ~= false)
+	W.heldButtons = {}
+	function UserInputService:IsMouseButtonPressed(button)
+		return W.heldButtons[button] == true
+	end
+	-- 우클릭을 누르고/놓고
+	function W.holdAim(down)
+		W.heldButtons[Enum.UserInputType.MouseButton2] = down and true or false
+	end
 	W.UserInputService = UserInputService
 
 	--------------------------------------------------------- game
