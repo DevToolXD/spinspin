@@ -6,8 +6,9 @@
 
 	화면 오른쪽 위에 패널이 뜨고, ON(또는 Q)으로 기능을 켭니다.
 	켜져 있어도 가만히 있으면 아무 일도 없고, **마우스 우클릭을 누르고
-	있는 동안에만** 내 카메라에서 가장 가까운 플레이어의 머리(Head)를
-	즉시 조준합니다. 버튼을 놓으면 곧바로 기본 카메라로 돌아갑니다.
+	있는 동안에만** 조준선(내가 바라보는 방향)에 가장 가까운 플레이어의
+	머리(Head)를 즉시 조준합니다. 버튼을 놓으면 곧바로 기본 카메라로
+	돌아갑니다.
 	누르고 있는 동안 잡은 대상은 죽거나 아주 멀어지기 전까지 유지됩니다.
 
 	동작하지 않으면 Output 창(View > Output)을 먼저 확인하세요.
@@ -31,6 +32,8 @@ local CONFIG = {
 	AimButton       = Enum.UserInputType.MouseButton2, -- 조준을 거는 버튼 (기본: 우클릭)
 	KeepTargetOnRelease = false,             -- true면 버튼을 놓아도 대상을 기억했다가 다시 조준
 	AimPartName     = "Head",                -- 조준할 부위 이름
+	TargetMode      = "Crosshair",           -- "Crosshair": 조준선에 가까운 순 / "Distance": 거리가 가까운 순
+	MaxAngle        = 30,                    -- Crosshair 모드에서 조준선으로부터 이 각도(도) 밖은 무시
 	MaxDistance     = 300,                   -- 새 대상을 고를 때 이 거리(스터드) 밖은 무시
 	DropDistance    = 800,                   -- 이미 조준 중인 대상은 이만큼 멀어져야 놓아줌
 	TeamCheck       = true,                  -- 같은 팀은 대상에서 제외
@@ -93,7 +96,7 @@ local aimRotation = nil
 local autoRotateOverridden = false
 
 -- 마지막 탐색에서 후보들이 왜 걸러졌는지. 패널에 이유를 띄우는 데 씁니다.
-local scan = { others = 0, candidates = 0, sameTeam = 0, tooFar = 0, blocked = 0 }
+local scan = { others = 0, candidates = 0, sameTeam = 0, tooFar = 0, outOfView = 0, blocked = 0 }
 
 ----------------------------------------------------------------------
 -- 대상 찾기
@@ -157,15 +160,38 @@ local function isSameTeam(player)
 	return player.Team ~= nil and player.Team == LocalPlayer.Team
 end
 
-local function findNearestPlayer()
-	scan.others, scan.candidates, scan.sameTeam, scan.tooFar, scan.blocked = 0, 0, 0, 0, 0
+local function findTarget()
+	scan.others, scan.candidates = 0, 0
+	scan.sameTeam, scan.tooFar, scan.outOfView, scan.blocked = 0, 0, 0, 0
 
 	local origin = getOrigin()
 	if not origin then
 		return nil, nil, 0
 	end
 
-	local bestPlayer, bestPart, bestDistance = nil, nil, CONFIG.MaxDistance
+	-- 조준선 = 지금 카메라가 바라보는 방향. 우리 렌더스텝은 기본 카메라(200)
+	-- 뒤에서 도니까, 이 시점의 LookVector는 플레이어가 실제로 보고 있는 방향입니다.
+	local camera = workspace.CurrentCamera
+	local lookVector = camera and camera.CFrame.LookVector or nil
+	local crosshairMode = (CONFIG.TargetMode == "Crosshair") and lookVector ~= nil
+
+	local bestPlayer, bestPart, bestDistance = nil, nil, 0
+	local bestScore, bestAngle = math.huge, 0
+
+	-- 점수가 낮을수록 좋은 대상. Crosshair 모드는 각도, Distance 모드는 거리.
+	-- 각도가 사실상 같으면(일직선으로 겹쳐 선 경우) 가까운 쪽을 고릅니다.
+	local function isBetter(score, distance)
+		if not bestPlayer then
+			return true
+		end
+		if score < bestScore - 1e-3 then
+			return true
+		end
+		if score > bestScore + 1e-3 then
+			return false
+		end
+		return distance < bestDistance
+	end
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
@@ -178,14 +204,29 @@ local function findNearestPlayer()
 				scan.sameTeam += 1
 			else
 				scan.candidates += 1
-				local distance = (aimPart.Position - origin).Magnitude
+
+				local offset = aimPart.Position - origin
+				local distance = offset.Magnitude
+
+				local angle = 0
+				if crosshairMode and distance > 0.05 then
+					-- 조준선과 대상 방향 사이의 각도
+					local dot = math.clamp(lookVector:Dot(offset.Unit), -1, 1)
+					angle = math.deg(math.acos(dot))
+				end
 
 				if distance >= CONFIG.MaxDistance then
 					scan.tooFar += 1
+				elseif crosshairMode and angle > CONFIG.MaxAngle then
+					scan.outOfView += 1
 				elseif CONFIG.WallCheck and not hasLineOfSight(origin, aimPart, character) then
 					scan.blocked += 1
-				elseif distance < bestDistance then
-					bestPlayer, bestPart, bestDistance = player, aimPart, distance
+				else
+					local score = crosshairMode and angle or distance
+					if isBetter(score, distance) then
+						bestScore, bestAngle = score, angle
+						bestPlayer, bestPart, bestDistance = player, aimPart, distance
+					end
 				end
 			end
 		end
@@ -193,13 +234,33 @@ local function findNearestPlayer()
 
 	if CONFIG.Debug then
 		print(string.format(
-			"[AimAssist] 탐색: 다른 플레이어 %d명 / 후보 %d명 / 같은 팀 %d / 사거리 밖 %d / 벽 %d -> %s",
-			scan.others, scan.candidates, scan.sameTeam, scan.tooFar, scan.blocked,
-			bestPlayer and bestPlayer.Name or "없음"
+			"[AimAssist] 탐색(%s): 다른 플레이어 %d / 후보 %d / 같은 팀 %d / 사거리 밖 %d / 조준선 밖 %d / 벽 %d -> %s%s",
+			crosshairMode and "조준선" or "거리",
+			scan.others, scan.candidates, scan.sameTeam, scan.tooFar, scan.outOfView, scan.blocked,
+			bestPlayer and bestPlayer.Name or "없음",
+			bestPlayer and string.format(" (%.0f스터드, %.1f도)", bestDistance, bestAngle) or ""
 		))
 	end
 
 	return bestPlayer, bestPart, bestDistance
+end
+
+-- 대상을 못 잡은 이유를 사람이 읽을 수 있게. "왜 안 되지"를 패널에서 바로 봅니다.
+local function noTargetReason()
+	if scan.others == 0 then
+		return "다른 플레이어 없음\nStudio에서 2명 이상으로 테스트하세요"
+	elseif scan.candidates == 0 and scan.sameTeam > 0 then
+		return string.format("같은 팀만 있음 (%d명)", scan.sameTeam)
+	elseif scan.candidates == 0 then
+		return "살아있는 대상 없음"
+	elseif scan.outOfView > 0 then
+		return string.format("조준선에서 벗어남 (%d명)\n대상 쪽을 보거나 MaxAngle을 늘리세요", scan.outOfView)
+	elseif scan.blocked > 0 then
+		return string.format("벽에 가림 (%d명)\nWallCheck를 꺼보세요", scan.blocked)
+	elseif scan.tooFar > 0 then
+		return string.format("사거리 밖 (%d명)\nMaxDistance를 늘려보세요", scan.tooFar)
+	end
+	return "조준할 대상 없음"
 end
 
 -- 조준 버튼을 누르고 있는지. 매 프레임 실제 눌림 상태를 직접 읽습니다.
@@ -215,22 +276,6 @@ local function isHoldingAim()
 		return true
 	end
 	return UserInputService:IsMouseButtonPressed(CONFIG.AimButton)
-end
-
--- 대상을 못 잡은 이유를 사람이 읽을 수 있게. "왜 안 되지"를 패널에서 바로 봅니다.
-local function noTargetReason()
-	if scan.others == 0 then
-		return "다른 플레이어 없음\nStudio에서 2명 이상으로 테스트하세요"
-	elseif scan.candidates == 0 and scan.sameTeam > 0 then
-		return string.format("같은 팀만 있음 (%d명)", scan.sameTeam)
-	elseif scan.candidates == 0 then
-		return "살아있는 대상 없음"
-	elseif scan.blocked > 0 then
-		return string.format("벽에 가림 (%d명)\nWallCheck를 꺼보세요", scan.blocked)
-	elseif scan.tooFar > 0 then
-		return string.format("사거리 밖 (%d명)\nMaxDistance를 늘려보세요", scan.tooFar)
-	end
-	return "조준할 대상 없음"
 end
 
 -- 이미 조준 중인 대상을 계속 붙잡고 있을지 판단합니다.
@@ -514,7 +559,7 @@ local function onRenderStep(deltaTime)
 		acquireClock += deltaTime
 		if acquireClock >= ACQUIRE_INTERVAL then
 			acquireClock = 0
-			targetPlayer, targetPart, targetDistance = findNearestPlayer()
+			targetPlayer, targetPart, targetDistance = findTarget()
 		end
 	end
 

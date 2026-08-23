@@ -107,7 +107,7 @@ function World.build(opts)
 
 	-- 기본 카메라(우선순위 200)를 흉내내서, 매 프레임 플레이어 마우스 방향으로
 	-- 카메라를 돌려놓습니다. 우리 스크립트가 그 뒤(201)에 이겨야 정상입니다.
-	W.defaultCameraLook = opts.defaultCameraLook or Vector3.new(0, 0, 1)
+	W.defaultCameraLook = opts.defaultCameraLook or Vector3.new(1, 0, 0)
 	W.defaultCameraPos = opts.cameraPos or Vector3.new(0, 5, 0)
 	RunService:BindToRenderStep("MockDefaultCamera", Enum.RenderPriority.Camera.Value, function()
 		camera.CFrame = CFrame.lookAt(W.defaultCameraPos, W.defaultCameraPos + W.defaultCameraLook)

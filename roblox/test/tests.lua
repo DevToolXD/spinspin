@@ -20,6 +20,16 @@ local function section(title)
 	print("[" .. title .. "]")
 end
 
+-- 적들은 +X에 두고, 기본 카메라는 거기서 20도 벗어난 곳을 보게 합니다.
+-- MaxAngle(30도) 안이라 대상은 잡히고, 방향은 달라서 덮어쓰기를 검사할 수 있습니다.
+local OFF20 = Vector3.new(math.cos(math.rad(20)), 0, math.sin(math.rad(20)))
+
+local function isDefaultLook(camera)
+	local look = camera.CFrame.LookVector
+	return approx(look.X, OFF20.X, 1e-3) and approx(look.Y, OFF20.Y, 1e-3)
+		and approx(look.Z, OFF20.Z, 1e-3)
+end
+
 local function looksAt(camera, targetPos)
 	local look = camera.CFrame.LookVector
 	local want = (targetPos - camera.CFrame.Position).Unit
@@ -103,7 +113,7 @@ do
 	local W = World.build({
 		cameraPos = camPos,
 		-- 기본 카메라는 매 프레임 +Z를 보게 해둠. 적은 +X 쪽에 있음.
-		defaultCameraLook = Vector3.new(0, 0, 1),
+		defaultCameraLook = OFF20,
 	})
 	local near = W.addPlayer("Near", Vector3.new(100, 5, 0))
 	local far = W.addPlayer("Far", Vector3.new(200, 5, 0))
@@ -247,7 +257,7 @@ end
 --=====================================================================
 section("7. OFF 이후 / 대상 없음")
 do
-	local W = World.build({ cameraPos = Vector3.new(0, 5, 0), defaultCameraLook = Vector3.new(0, 0, 1) })
+	local W = World.build({ cameraPos = Vector3.new(0, 5, 0), defaultCameraLook = OFF20 })
 	local a = W.addPlayer("A", Vector3.new(100, 5, 0))
 	loadAimAssist()
 	aimOn(W)
@@ -256,9 +266,8 @@ do
 
 	W.pressKey(Enum.KeyCode.Q)
 	W.step(1 / 60)
-	local look = W.camera.CFrame.LookVector
-	check("OFF 하면 기본 카메라 방향(+Z)으로 돌아감",
-		approx(look.X, 0, 1e-3) and approx(look.Z, 1, 1e-3), tostring(look))
+	check("OFF 하면 기본 카메라 방향으로 돌아감", isDefaultLook(W.camera),
+		tostring(W.camera.CFrame))
 	check("OFF 상태 표시", statusOf(W) == "대기 중", statusOf(W))
 
 	-- 아무도 없을 때
@@ -302,7 +311,7 @@ end
 section("9. 우클릭 홀드")
 do
 	local camPos = Vector3.new(0, 5, 0)
-	local W = World.build({ cameraPos = camPos, defaultCameraLook = Vector3.new(0, 0, 1) })
+	local W = World.build({ cameraPos = camPos, defaultCameraLook = OFF20 })
 	local a = W.addPlayer("A", Vector3.new(100, 5, 0))
 	local headPos = a.Character:FindFirstChild("Head").Position
 	loadAimAssist()
@@ -310,9 +319,8 @@ do
 	-- ON만 하고 우클릭은 안 누른 상태
 	W.pressKey(Enum.KeyCode.Q)
 	for _ = 1, 10 do W.step(1 / 60) end
-	local look = W.camera.CFrame.LookVector
-	check("ON이어도 우클릭 안 하면 카메라를 건드리지 않음",
-		approx(look.X, 0, 1e-3) and approx(look.Z, 1, 1e-3), tostring(look))
+	check("ON이어도 우클릭 안 하면 카메라를 건드리지 않음", isDefaultLook(W.camera),
+		tostring(W.camera.CFrame))
 	check("안내 문구 표시", statusOf(W) == "우클릭하는 동안 조준", statusOf(W))
 	check("우클릭 전에는 탐색도 하지 않음", W.raycastCalls == 0, W.raycastCalls)
 
@@ -325,9 +333,8 @@ do
 	-- 놓으면 즉시 기본 카메라로
 	W.holdAim(false)
 	W.step(1 / 60)
-	local look2 = W.camera.CFrame.LookVector
-	check("놓으면 즉시 기본 카메라 방향으로 복귀",
-		approx(look2.X, 0, 1e-3) and approx(look2.Z, 1, 1e-3), tostring(look2))
+	check("놓으면 즉시 기본 카메라 방향으로 복귀", isDefaultLook(W.camera),
+		tostring(W.camera.CFrame))
 	check("놓으면 대상도 해제", statusOf(W) == "우클릭하는 동안 조준", statusOf(W))
 
 	-- 다시 누르면 그 시점의 가장 가까운 대상을 새로 잡음
@@ -344,9 +351,8 @@ do
 	-- OFF로 끄면 우클릭을 누르고 있어도 조준 안 됨
 	W.pressKey(Enum.KeyCode.Q)
 	W.step(1 / 60)
-	local look3 = W.camera.CFrame.LookVector
-	check("OFF면 우클릭 중이어도 조준 안 함",
-		approx(look3.X, 0, 1e-3) and approx(look3.Z, 1, 1e-3), tostring(look3))
+	check("OFF면 우클릭 중이어도 조준 안 함", isDefaultLook(W.camera),
+		tostring(W.camera.CFrame))
 	check("OFF 상태 표시", statusOf(W) == "대기 중", statusOf(W))
 
 	-- 마우스 없는 기기에서는 ON만으로 조준
@@ -360,7 +366,78 @@ do
 end
 
 --=====================================================================
-section("10. 진단 출력")
+section("10. 대상 선정 기준 (" .. TARGETMODE .. ")")
+do
+	-- 정면 멀리 vs 옆쪽 가까이. 두 모드가 정반대로 골라야 정상입니다.
+	--   Front : (250, 5, 0)  -> 조준선에서 0도,    거리 250
+	--   Side  : ( 50, 5, 20) -> 조준선에서 21.8도, 거리 약 54
+	local W = World.build({ cameraPos = Vector3.new(0, 5, 0) }) -- 기본 카메라는 +X를 봄
+	W.addPlayer("Front", Vector3.new(250, 5, 0))
+	W.addPlayer("Side", Vector3.new(50, 5, 20))
+	loadAimAssist()
+	aimOn(W)
+	for _ = 1, 10 do W.step(1 / 60) end
+
+	if TARGETMODE == "Crosshair" then
+		check("조준선에 가까운 쪽을 고름 (더 멀어도 Front)",
+			statusOf(W):find("Front") ~= nil, statusOf(W))
+	else
+		check("거리가 가까운 쪽을 고름 (조준선에서 벗어나도 Side)",
+			statusOf(W):find("Side") ~= nil, statusOf(W))
+	end
+
+	-- 일직선으로 겹쳐 서 있으면(각도 동일) 가까운 쪽을 골라야 함
+	local W2 = World.build({ cameraPos = Vector3.new(0, 5, 0) })
+	W2.addPlayer("Behind", Vector3.new(200, 5, 0))
+	W2.addPlayer("InFront", Vector3.new(40, 5, 0))
+	loadAimAssist()
+	aimOn(W2)
+	for _ = 1, 10 do W2.step(1 / 60) end
+	check("각도가 같으면 가까운 쪽을 고름", statusOf(W2):find("InFront") ~= nil, statusOf(W2))
+
+	-- 조준선에서 크게 벗어난 경우
+	local W3 = World.build({ cameraPos = Vector3.new(0, 5, 0) })
+	local wide = W3.addPlayer("Wide", Vector3.new(50, 5, 50)) -- 45도
+	loadAimAssist()
+	aimOn(W3)
+	for _ = 1, 10 do W3.step(1 / 60) end
+
+	if TARGETMODE == "Crosshair" then
+		check("MaxAngle(30도) 밖이면 잡지 않고 이유를 표시",
+			statusOf(W3) and statusOf(W3):find("조준선에서 벗어남") ~= nil, statusOf(W3))
+
+		-- 그쪽을 바라보면 잡혀야 함
+		W3.defaultCameraLook = Vector3.new(1, 0, 1)
+		for _ = 1, 10 do W3.step(1 / 60) end
+		check("그쪽을 바라보면 잡힘", statusOf(W3):find("Wide") ~= nil, statusOf(W3))
+		check("잡은 뒤에는 그 대상 머리를 조준",
+			(looksAt(W3.camera, wide.Character:FindFirstChild("Head").Position)),
+			tostring(W3.camera.CFrame))
+	else
+		check("Distance 모드에서는 각도와 무관하게 잡음",
+			statusOf(W3):find("Wide") ~= nil, statusOf(W3))
+	end
+
+	-- 조준 중에는 각도가 대상 유지에 영향을 주지 않아야 함
+	-- (카메라를 대상 쪽으로 돌려놓았으니 원뿔을 벗어날 일은 없지만,
+	--  대상이 옆으로 크게 이동해도 계속 따라가는지 확인)
+	local W4 = World.build({ cameraPos = Vector3.new(0, 5, 0) })
+	local mover = W4.addPlayer("Mover", Vector3.new(100, 5, 0))
+	loadAimAssist()
+	aimOn(W4)
+	W4.step(1 / 60)
+	check("Mover를 잡음", statusOf(W4):find("Mover") ~= nil, statusOf(W4))
+	mover.Character:FindFirstChild("Head").Position = Vector3.new(0, 5, 100) -- 90도 이동
+	for _ = 1, 30 do W4.step(1 / 60) end
+	check("대상이 조준선에서 크게 벗어나도 계속 따라감",
+		statusOf(W4):find("Mover") ~= nil, statusOf(W4))
+	check("이동한 위치를 조준",
+		(looksAt(W4.camera, mover.Character:FindFirstChild("Head").Position)),
+		tostring(W4.camera.CFrame))
+end
+
+--=====================================================================
+section("11. 진단 출력")
 do
 	local W = World.build({ cameraPos = Vector3.new(0, 5, 0) })
 	PRINTS = {}

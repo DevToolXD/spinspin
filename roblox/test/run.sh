@@ -26,12 +26,13 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 # mock + world + (스크립트를 함수로 감싸서) + tests 를 한 파일로 합칩니다.
-build() { # $1=출력파일  $2=WALLCHECK값  $3=검사할 스크립트
+build() { # $1=출력파일  $2=WALLCHECK값  $3=검사할 스크립트  $4=TARGETMODE값
 	{
 		cat "$DIR/mock.lua"
 		cat "$DIR/world.lua"
 		echo ""
 		echo "WALLCHECK = $2"
+		echo "TARGETMODE = \"${4:-Crosshair}\""
 		echo "-- ===== 실제 스크립트 (시나리오마다 새로 실행할 수 있게 함수로 감쌈) ====="
 		echo "function loadAimAssist()"
 		cat "$3"
@@ -41,13 +42,20 @@ build() { # $1=출력파일  $2=WALLCHECK값  $3=검사할 스크립트
 	} > "$1"
 }
 
-echo "############ 변형 A: 기본 설정 (WallCheck = false) ############"
-build "$WORK/a.lua" false "$SCRIPT"
+echo "############ 변형 A: 기본 설정 (Crosshair, WallCheck = false) ############"
+build "$WORK/a.lua" false "$SCRIPT" Crosshair
 "$LUAU" "$WORK/a.lua"
 
 echo ""
 echo "############ 변형 B: WallCheck = true ############"
-sed 's/^\tWallCheck       = false,/\tWallCheck       = true,/' "$SCRIPT" > "$WORK/variant.lua"
-grep -q "WallCheck       = true," "$WORK/variant.lua" || { echo "WallCheck 패치 실패"; exit 1; }
-build "$WORK/b.lua" true "$WORK/variant.lua"
+sed 's/^\tWallCheck       = false,/\tWallCheck       = true,/' "$SCRIPT" > "$WORK/wall.lua"
+grep -q "WallCheck       = true," "$WORK/wall.lua" || { echo "WallCheck 패치 실패"; exit 1; }
+build "$WORK/b.lua" true "$WORK/wall.lua" Crosshair
 "$LUAU" "$WORK/b.lua"
+
+echo ""
+echo "############ 변형 C: TargetMode = \"Distance\" ############"
+sed 's/^\tTargetMode      = "Crosshair",/\tTargetMode      = "Distance",/' "$SCRIPT" > "$WORK/dist.lua"
+grep -q 'TargetMode      = "Distance",' "$WORK/dist.lua" || { echo "TargetMode 패치 실패"; exit 1; }
+build "$WORK/c.lua" false "$WORK/dist.lua" Distance
+"$LUAU" "$WORK/c.lua"
