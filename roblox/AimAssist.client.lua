@@ -19,15 +19,16 @@ local CONFIG = {
 	StartEnabled    = false,                 -- true면 시작하자마자 ON 상태
 	ToggleKey       = Enum.KeyCode.Q,        -- 버튼 대신 쓸 단축키 (nil이면 사용 안 함)
 	AimPartName     = "Head",                -- 조준할 부위 이름
-	MaxDistance     = 300,                   -- 이 거리(스터드) 밖의 플레이어는 무시
+	MaxDistance     = 300,                   -- 새 대상을 고를 때 이 거리(스터드) 밖은 무시
+	DropDistance    = 800,                   -- 이미 조준 중인 대상은 이만큼 멀어져야 놓아줌
 	TeamCheck       = true,                  -- 같은 팀은 대상에서 제외
 	WallCheck       = true,                  -- 벽에 가려진 대상은 제외
 	Smoothness      = 0,                     -- 0이면 즉시 조준(스냅). 값을 올릴수록 부드럽게 따라감
 	RotateCharacter = false,                 -- 캐릭터 몸통도 대상 쪽으로 돌릴지
 }
 
--- 대상을 다시 고르는 주기(초). 매 프레임 다시 고르면 대상이 깜빡깜빡 바뀝니다.
-local TARGET_REFRESH_INTERVAL = 0.15
+-- 대상이 없을 때 새로 찾아보는 주기(초). 이미 대상을 잡고 있으면 탐색하지 않습니다.
+local ACQUIRE_INTERVAL = 0.15
 
 ----------------------------------------------------------------------
 -- 서비스 / 상태
@@ -50,7 +51,7 @@ local COLOR_MUTED = Color3.fromRGB(148, 155, 172)
 local enabled = false
 
 local targetPlayer, targetPart, targetDistance = nil, nil, 0
-local refreshClock = 0
+local acquireClock = 0
 
 -- 우리가 직접 관리하는 카메라 회전 상태. 기본 카메라 CFrame에서 매번 시작하면
 -- 조준이 목표까지 수렴하지 못하기 때문에 회전만 따로 들고 있습니다.
@@ -81,16 +82,17 @@ local function getAimableParts(player)
 	return aimPart, humanoid, character
 end
 
--- 거리 계산의 기준점. 내 캐릭터가 있으면 캐릭터, 없으면 카메라 위치.
+-- 조준의 기준점은 내 카메라입니다. 거리 계산도, 벽 판정 레이캐스트도
+-- 전부 여기서 출발합니다. (카메라가 아직 없을 때만 캐릭터로 대체)
 local function getOrigin()
-	local character = LocalPlayer.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if root then
-		return root.Position
+	local camera = workspace.CurrentCamera
+	if camera then
+		return camera.CFrame.Position
 	end
 
-	local camera = workspace.CurrentCamera
-	return camera and camera.CFrame.Position or nil
+	local character = LocalPlayer.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	return root and root.Position or nil
 end
 
 local function hasLineOfSight(origin, aimPart, targetCharacter)
@@ -140,11 +142,33 @@ local function findNearestPlayer()
 	return bestPlayer, bestPart, bestDistance
 end
 
+-- 이미 조준 중인 대상을 계속 붙잡고 있을지 판단합니다.
+-- 놓아주는 조건은 딱 세 가지 -- 게임을 나갔거나, 죽었거나(리스폰 포함),
+-- DropDistance보다 멀어졌을 때. 팀이나 벽 여부는 여기서 보지 않기 때문에
+-- 대상이 엄폐물 뒤로 잠깐 숨어도 조준이 풀리지 않습니다.
 local function isTargetStillValid()
 	if not targetPlayer or not targetPart or not targetPart.Parent then
 		return false
 	end
-	return getAimableParts(targetPlayer) ~= nil
+
+	-- 게임을 나간 플레이어
+	if targetPlayer.Parent ~= Players then
+		return false
+	end
+
+	-- 죽었거나 리스폰해서 다른 캐릭터가 됐는지 (Head 인스턴스가 바뀜)
+	if getAimableParts(targetPlayer) ~= targetPart then
+		return false
+	end
+
+	local origin = getOrigin()
+	if not origin then
+		return false
+	end
+
+	-- 설정을 거꾸로 넣어도 대상이 잡혔다 풀렸다 하지 않도록 최소 MaxDistance는 보장
+	local dropDistance = math.max(CONFIG.DropDistance, CONFIG.MaxDistance)
+	return (targetPart.Position - origin).Magnitude <= dropDistance
 end
 
 ----------------------------------------------------------------------
@@ -293,16 +317,24 @@ do
 	end)
 end
 
+-- 매 프레임 호출되므로, 표시 내용이 실제로 바뀔 때만 속성을 씁니다.
+local lastStatusText = nil
+
 local function updateStatus()
+	local text, color
 	if not enabled then
-		statusLabel.Text = "대기 중"
-		statusLabel.TextColor3 = COLOR_MUTED
+		text, color = "대기 중", COLOR_MUTED
 	elseif targetPlayer then
-		statusLabel.Text = string.format("대상: %s\n거리 %d스터드", targetPlayer.DisplayName, math.floor(targetDistance))
-		statusLabel.TextColor3 = COLOR_ON
+		text = string.format("대상: %s\n거리 %d스터드", targetPlayer.DisplayName, math.floor(targetDistance))
+		color = COLOR_ON
 	else
-		statusLabel.Text = "조준할 대상 없음"
-		statusLabel.TextColor3 = COLOR_MUTED
+		text, color = "조준할 대상 없음", COLOR_MUTED
+	end
+
+	if text ~= lastStatusText then
+		lastStatusText = text
+		statusLabel.Text = text
+		statusLabel.TextColor3 = color
 	end
 end
 
@@ -348,13 +380,25 @@ local function onRenderStep(deltaTime)
 		return
 	end
 
-	-- 대상 재선정 (주기마다, 또는 지금 대상이 죽거나 사라졌을 때)
-	refreshClock += deltaTime
-	if refreshClock >= TARGET_REFRESH_INTERVAL or not isTargetStillValid() then
-		refreshClock = 0
-		targetPlayer, targetPart, targetDistance = findNearestPlayer()
-		updateStatus()
+	if isTargetStillValid() then
+		-- 한 번 잡은 대상은 계속 따라갑니다. 더 가까운 사람이 나타나도 갈아타지 않습니다.
+		targetDistance = (targetPart.Position - camera.CFrame.Position).Magnitude
+	else
+		if targetPlayer then
+			-- 방금 놓쳤으면 다음 줄에서 곧바로 새 대상을 찾도록 타이머를 채워둡니다.
+			targetPlayer, targetPart, targetDistance = nil, nil, 0
+			acquireClock = ACQUIRE_INTERVAL
+		end
+
+		-- 탐색은 플레이어 수만큼 레이캐스트를 돌리므로 주기를 둡니다.
+		acquireClock += deltaTime
+		if acquireClock >= ACQUIRE_INTERVAL then
+			acquireClock = 0
+			targetPlayer, targetPart, targetDistance = findNearestPlayer()
+		end
 	end
+
+	updateStatus()
 
 	if not targetPart then
 		aimRotation = nil
@@ -398,7 +442,7 @@ local function setEnabled(value)
 	enabled = value
 
 	if enabled then
-		refreshClock = TARGET_REFRESH_INTERVAL -- 켜자마자 바로 대상 탐색
+		acquireClock = ACQUIRE_INTERVAL -- 켜자마자 바로 대상 탐색
 		aimRotation = nil
 		RunService:BindToRenderStep(RENDER_STEP_NAME, AIM_PRIORITY, onRenderStep)
 	else
