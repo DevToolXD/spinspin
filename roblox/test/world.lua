@@ -121,9 +121,12 @@ function World.build(opts)
 	function UserInputService:IsMouseButtonPressed(button)
 		return W.heldButtons[button] == true
 	end
-	-- 우클릭을 누르고/놓고
+	-- 조준 버튼(좌클릭)을 누르고/놓고
 	function W.holdAim(down)
-		W.heldButtons[Enum.UserInputType.MouseButton2] = down and true or false
+		W.heldButtons[Enum.UserInputType.MouseButton1] = down and true or false
+	end
+	function W.holdButton(button, down)
+		W.heldButtons[button] = down and true or false
 	end
 	W.UserInputService = UserInputService
 

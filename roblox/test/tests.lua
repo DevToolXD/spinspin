@@ -308,7 +308,7 @@ do
 end
 
 --=====================================================================
-section("9. 우클릭 홀드")
+section("9. 좌클릭 홀드")
 do
 	local camPos = Vector3.new(0, 5, 0)
 	local W = World.build({ cameraPos = camPos, defaultCameraLook = OFF20 })
@@ -319,15 +319,21 @@ do
 	-- ON만 하고 우클릭은 안 누른 상태
 	W.pressKey(Enum.KeyCode.Q)
 	for _ = 1, 10 do W.step(1 / 60) end
-	check("ON이어도 우클릭 안 하면 카메라를 건드리지 않음", isDefaultLook(W.camera),
+	check("ON이어도 좌클릭 안 하면 카메라를 건드리지 않음", isDefaultLook(W.camera),
 		tostring(W.camera.CFrame))
-	check("안내 문구 표시", statusOf(W) == "우클릭하는 동안 조준", statusOf(W))
-	check("우클릭 전에는 탐색도 하지 않음", W.raycastCalls == 0, W.raycastCalls)
+	check("안내 문구 표시", statusOf(W) == "좌클릭하는 동안 조준", statusOf(W))
+	check("좌클릭 전에는 탐색도 하지 않음", W.raycastCalls == 0, W.raycastCalls)
 
-	-- 우클릭을 누르면 그 프레임에 바로 조준
+	-- 설정한 버튼이 아니면 반응하지 않아야 함 (좌클릭이 맞는지 확인)
+	W.holdButton(Enum.UserInputType.MouseButton2, true)
+	for _ = 1, 5 do W.step(1 / 60) end
+	check("우클릭에는 반응하지 않음", isDefaultLook(W.camera), tostring(W.camera.CFrame))
+	W.holdButton(Enum.UserInputType.MouseButton2, false)
+
+	-- 좌클릭을 누르면 그 프레임에 바로 조준
 	W.holdAim(true)
 	W.step(1 / 60)
-	check("우클릭한 첫 프레임에 바로 조준", (looksAt(W.camera, headPos)), tostring(W.camera.CFrame))
+	check("좌클릭한 첫 프레임에 바로 조준", (looksAt(W.camera, headPos)), tostring(W.camera.CFrame))
 	check("대상 표시", statusOf(W):find("A") ~= nil, statusOf(W))
 
 	-- 놓으면 즉시 기본 카메라로
@@ -335,7 +341,7 @@ do
 	W.step(1 / 60)
 	check("놓으면 즉시 기본 카메라 방향으로 복귀", isDefaultLook(W.camera),
 		tostring(W.camera.CFrame))
-	check("놓으면 대상도 해제", statusOf(W) == "우클릭하는 동안 조준", statusOf(W))
+	check("놓으면 대상도 해제", statusOf(W) == "좌클릭하는 동안 조준", statusOf(W))
 
 	-- 다시 누르면 그 시점의 가장 가까운 대상을 새로 잡음
 	local b = W.addPlayer("B", Vector3.new(20, 5, 0))
@@ -351,9 +357,33 @@ do
 	-- OFF로 끄면 우클릭을 누르고 있어도 조준 안 됨
 	W.pressKey(Enum.KeyCode.Q)
 	W.step(1 / 60)
-	check("OFF면 우클릭 중이어도 조준 안 함", isDefaultLook(W.camera),
+	check("OFF면 좌클릭 중이어도 조준 안 함", isDefaultLook(W.camera),
 		tostring(W.camera.CFrame))
 	check("OFF 상태 표시", statusOf(W) == "대기 중", statusOf(W))
+
+	-- 좌클릭은 패널 드래그에도 쓰이므로, 패널을 잡고 있는 동안은 조준하면 안 됨
+	-- 기본 카메라를 적 방향에서 20도 틀어둬야 "조준함"과 "안 함"이 구분됩니다.
+	local W5 = World.build({ cameraPos = Vector3.new(0, 5, 0), defaultCameraLook = OFF20 })
+	W5.addPlayer("D", Vector3.new(100, 5, 0))
+	loadAimAssist()
+	W5.pressKey(Enum.KeyCode.Q)
+	local panel = W5.findGui("AimAssistGui"):FindFirstChild("Panel")
+	local dragInput = {
+		UserInputType = Enum.UserInputType.MouseButton1,
+		Position = Vector2.new(0, 0),
+		UserInputState = Enum.UserInputState.Begin,
+		Changed = newSignal(),
+	}
+	panel.InputBegan:Fire(dragInput)   -- 패널을 잡음
+	W5.holdAim(true)                   -- 좌클릭은 눌린 상태
+	for _ = 1, 10 do W5.step(1 / 60) end
+	check("패널을 드래그하는 동안은 조준하지 않음", isDefaultLook(W5.camera),
+		tostring(W5.camera.CFrame))
+
+	dragInput.UserInputState = Enum.UserInputState.End
+	dragInput.Changed:Fire()           -- 패널을 놓음 (좌클릭은 계속 눌린 상태)
+	W5.step(1 / 60)
+	check("패널을 놓으면 다시 조준", statusOf(W5):find("D") ~= nil, statusOf(W5))
 
 	-- 마우스 없는 기기에서는 ON만으로 조준
 	local W2 = World.build({ cameraPos = camPos, mouseEnabled = false })

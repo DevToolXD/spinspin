@@ -5,7 +5,7 @@
 	스크립트   : LocalScript  (Script 아님!)
 
 	화면 오른쪽 위에 패널이 뜨고, ON(또는 Q)으로 기능을 켭니다.
-	켜져 있어도 가만히 있으면 아무 일도 없고, **마우스 우클릭을 누르고
+	켜져 있어도 가만히 있으면 아무 일도 없고, **마우스 좌클릭을 누르고
 	있는 동안에만** 조준선(내가 바라보는 방향)에 가장 가까운 플레이어의
 	머리(Head)를 즉시 조준합니다. 버튼을 놓으면 곧바로 기본 카메라로
 	돌아갑니다.
@@ -29,7 +29,7 @@ local CONFIG = {
 	StartEnabled    = false,                 -- true면 시작하자마자 ON 상태
 	ToggleKey       = Enum.KeyCode.Q,        -- 켜고 끄는 단축키 (nil이면 사용 안 함)
 	HoldToAim       = true,                  -- true면 아래 버튼을 누르고 있는 동안에만 조준
-	AimButton       = Enum.UserInputType.MouseButton2, -- 조준을 거는 버튼 (기본: 우클릭)
+	AimButton       = Enum.UserInputType.MouseButton1, -- 조준을 거는 버튼 (기본: 좌클릭)
 	KeepTargetOnRelease = false,             -- true면 버튼을 놓아도 대상을 기억했다가 다시 조준
 	AimPartName     = "Head",                -- 조준할 부위 이름
 	TargetMode      = "Crosshair",           -- "Crosshair": 조준선에 가까운 순 / "Distance": 거리가 가까운 순
@@ -79,12 +79,20 @@ local RENDER_STEP_NAME = "AimAssist_Camera"
 -- 스크립트가 201을 쓰고 있을 경우를 대비한 여유)
 local AIM_PRIORITY = Enum.RenderPriority.Camera.Value + 10
 
+local BUTTON_LABELS = {
+	[Enum.UserInputType.MouseButton1] = "좌클릭",
+	[Enum.UserInputType.MouseButton2] = "우클릭",
+	[Enum.UserInputType.MouseButton3] = "휠클릭",
+}
+local AIM_BUTTON_LABEL = BUTTON_LABELS[CONFIG.AimButton] or CONFIG.AimButton.Name
+
 local COLOR_ON    = Color3.fromRGB(72, 214, 128)
 local COLOR_OFF   = Color3.fromRGB(74, 80, 94)
 local COLOR_MUTED = Color3.fromRGB(148, 155, 172)
 
 local enabled = false
-local holding = false -- 조준 버튼(우클릭)을 지금 누르고 있는지
+local holding = false        -- 조준 버튼을 지금 누르고 있는지
+local draggingPanel = false  -- 패널을 드래그 중인지 (좌클릭이 UI 조작과 겹치므로)
 
 local targetPlayer, targetPart, targetDistance = nil, nil, 0
 local acquireClock = 0
@@ -270,10 +278,14 @@ local function isHoldingAim()
 	if not CONFIG.HoldToAim then
 		return true
 	end
-	-- 마우스가 없는 기기(모바일 등)에서는 우클릭 자체가 불가능하므로
+	-- 마우스가 없는 기기(모바일 등)에서는 클릭 홀드 자체가 불가능하므로
 	-- ON인 동안 계속 조준합니다.
 	if not UserInputService.MouseEnabled then
 		return true
+	end
+	-- 좌클릭은 패널 드래그에도 쓰이므로, 패널을 잡고 있는 동안은 제외합니다.
+	if draggingPanel then
+		return false
 	end
 	return UserInputService:IsMouseButtonPressed(CONFIG.AimButton)
 end
@@ -317,9 +329,7 @@ do
 		table.insert(parts, CONFIG.ToggleKey.Name .. ": 켜기/끄기")
 	end
 	if CONFIG.HoldToAim then
-		local buttonName = CONFIG.AimButton == Enum.UserInputType.MouseButton2
-			and "우클릭" or CONFIG.AimButton.Name
-		table.insert(parts, buttonName .. ": 조준")
+		table.insert(parts, AIM_BUTTON_LABEL .. ": 조준")
 	end
 	HINT_TEXT = #parts > 0 and table.concat(parts, "   ·   ") or "드래그해서 옮길 수 있어요"
 end
@@ -436,25 +446,25 @@ create("TextLabel", {
 
 -- 패널 드래그
 do
-	local dragging, dragStart, startPosition = false, nil, nil
+	local dragStart, startPosition = nil, nil
 
 	panel.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
+			draggingPanel = true
 			dragStart = input.Position
 			startPosition = panel.Position
 
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
+					draggingPanel = false
 				end
 			end)
 		end
 	end)
 
 	UserInputService.InputChanged:Connect(function(input)
-		if not dragging then
+		if not draggingPanel then
 			return
 		end
 		if input.UserInputType == Enum.UserInputType.MouseMovement
@@ -476,7 +486,7 @@ local function updateStatus()
 	if not enabled then
 		text, color = "대기 중", COLOR_MUTED
 	elseif not holding then
-		text, color = "우클릭하는 동안 조준", COLOR_MUTED
+		text, color = AIM_BUTTON_LABEL .. "하는 동안 조준", COLOR_MUTED
 	elseif targetPlayer then
 		text = string.format("대상: %s\n거리 %d스터드", targetPlayer.DisplayName, math.floor(targetDistance))
 		color = COLOR_ON
@@ -649,7 +659,7 @@ end)
 print(string.format(
 	"[AimAssist] 로드됨 - %s 키 또는 화면 오른쪽 위 패널의 ON 버튼으로 켠 뒤, %s",
 	CONFIG.ToggleKey and CONFIG.ToggleKey.Name or "(단축키 없음)",
-	CONFIG.HoldToAim and "마우스 우클릭을 누르고 있으면 조준됩니다." or "바로 조준됩니다."
+	CONFIG.HoldToAim and ("마우스 " .. AIM_BUTTON_LABEL .. "을 누르고 있으면 조준됩니다.") or "바로 조준됩니다."
 ))
 
 if CONFIG.StartEnabled then
