@@ -26,9 +26,9 @@ local SHOW_ONLY_TEAMMATES = false          -- true 면 같은 팀(파티원)만 
 
 -- 구조물(월드) 윤곽선
 local WORLD_ESP_ENABLED    = true
-local WORLD_OUTLINE_COLOR  = Color3.fromRGB(150, 150, 150)
-local WORLD_LINE_TRANSPARENCY = 0.6        -- 0 = 진함, 1 = 안 보임
-local WORLD_LINE_THICKNESS = 0.03
+local WORLD_OUTLINE_COLOR  = Color3.fromRGB(0, 140, 255)  -- 구조물 윤곽선 색(파랑)
+local WORLD_LINE_TRANSPARENCY = 0          -- 0 = 완전 불투명(잘 보임), 1 = 안 보임
+local WORLD_LINE_THICKNESS = 0.12          -- 스터드 단위, 멀수록 얇아 보임
 local WORLD_RADIUS         = 150           -- 카메라 기준 이 반경 안의 구조물만
 local MAX_WORLD_BOXES      = 250           -- 동시에 그릴 최대 개수(성능)
 local WORLD_REFRESH_TIME   = 0.3           -- 초 단위 갱신 주기
