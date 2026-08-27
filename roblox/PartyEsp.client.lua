@@ -17,7 +17,7 @@ local player = Players.LocalPlayer
 -- 설정
 ----------------------------------------------------------------
 local VISIBLE_COLOR  = Color3.fromRGB(0, 255, 0)
-local OCCLUDED_COLOR = Color3.fromRGB(30, 120, 255)
+local OCCLUDED_COLOR = Color3.fromRGB(255, 0, 200) -- 벽 뒤 플레이어(구조물 파랑과 구분되게 분홍)
 
 local BAR_FULL_COLOR  = Color3.fromRGB(0, 255, 0)
 local BAR_EMPTY_COLOR = Color3.fromRGB(255, 0, 0)
@@ -35,6 +35,15 @@ local WORLD_REFRESH_TIME   = 0.3           -- 초 단위 갱신 주기
 local MIN_PART_SIZE        = 1             -- 이보다 작은 자잘한 파트는 무시
 local MAX_PART_SIZE        = 400           -- 베이스플레이트 같은 초대형 파트는 무시
 local WORLD_TOGGLE_KEY     = Enum.KeyCode.H -- H 키로 구조물 윤곽선 on/off
+
+-- 벽 관통(X-ray) 구조물 윤곽선
+-- Highlight 는 클라이언트당 31개까지만 렌더링되므로 "가장 가까운 N개"에만 쓴다.
+-- 나머지 구조물은 기존처럼 SelectionBox(벽에 가려짐)로 그린다.
+local WORLD_XRAY       = true
+local WORLD_XRAY_COUNT = 12                      -- 관통 표시할 가장 가까운 구조물 개수
+local WORLD_XRAY_COLOR = Color3.fromRGB(0, 170, 255)
+local WORLD_XRAY_TRANSPARENCY = 0.25             -- 0 = 진함
+local WORLD_XRAY_KEY   = Enum.KeyCode.J          -- J 키로 관통 표시 on/off
 
 ----------------------------------------------------------------
 -- 구조물 윤곽선 (SelectionBox 풀)
@@ -69,6 +78,30 @@ local function hideBoxesFrom(startIndex)
     end
 end
 
+local highlightPool = {}
+
+local function getHighlight(i)
+    local hl = highlightPool[i]
+    if not hl then
+        hl = Instance.new("Highlight")
+        hl.Name = "WorldEspXray"
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- 벽 뒤에서도 보임
+        hl.FillTransparency = 1                            -- 채우기 없음, 윤곽선만
+        hl.OutlineColor = WORLD_XRAY_COLOR
+        hl.OutlineTransparency = WORLD_XRAY_TRANSPARENCY
+        hl.Parent = worldFolder
+        highlightPool[i] = hl
+    end
+    return hl
+end
+
+local function hideHighlightsFrom(startIndex)
+    for i = startIndex, #highlightPool do
+        highlightPool[i].Adornee = nil
+        highlightPool[i].Enabled = false
+    end
+end
+
 local overlapParams = OverlapParams.new()
 overlapParams.FilterType = Enum.RaycastFilterType.Exclude
 overlapParams.MaxParts = 2000
@@ -94,6 +127,7 @@ local candidates = {}
 local function refreshWorldEsp()
     if not WORLD_ESP_ENABLED then
         hideBoxesFrom(1)
+        hideHighlightsFrom(1)
         return
     end
 
@@ -119,20 +153,35 @@ local function refreshWorldEsp()
         end
     end
 
-    -- 너무 많으면 가까운 것부터
-    if #candidates > MAX_WORLD_BOXES then
-        table.sort(candidates, function(a, b)
-            return (a.Position - origin).Magnitude < (b.Position - origin).Magnitude
-        end)
-    end
+    -- 가까운 것부터 (앞쪽 N개는 벽 관통 표시에 쓴다)
+    table.sort(candidates, function(a, b)
+        return (a.Position - origin).Magnitude < (b.Position - origin).Magnitude
+    end)
 
-    local count = math.min(#candidates, MAX_WORLD_BOXES)
-    for i = 1, count do
-        local box = getBox(i)
+    -- 벽 관통 표시: Highlight 31개 제한을 플레이어 ESP 와 나눠 쓴다
+    local xrayCount = 0
+    if WORLD_XRAY then
+        local otherPlayers = math.max(#Players:GetPlayers() - 1, 0)
+        local budget = math.max(28 - otherPlayers, 0)
+        xrayCount = math.min(WORLD_XRAY_COUNT, budget, #candidates)
+    end
+    for i = 1, xrayCount do
+        local hl = getHighlight(i)
+        hl.Adornee = candidates[i]
+        hl.Enabled = true
+    end
+    hideHighlightsFrom(xrayCount + 1)
+
+    -- 나머지는 SelectionBox (중복으로 그리지 않게 xrayCount 다음부터)
+    local boxCount = 0
+    local last = math.min(#candidates, xrayCount + MAX_WORLD_BOXES)
+    for i = xrayCount + 1, last do
+        boxCount += 1
+        local box = getBox(boxCount)
         box.Adornee = candidates[i]
         box.Visible = true
     end
-    hideBoxesFrom(count + 1)
+    hideBoxesFrom(boxCount + 1)
 end
 
 ----------------------------------------------------------------
@@ -300,6 +349,9 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.KeyCode == WORLD_TOGGLE_KEY then
         WORLD_ESP_ENABLED = not WORLD_ESP_ENABLED
+        refreshWorldEsp()
+    elseif input.KeyCode == WORLD_XRAY_KEY then
+        WORLD_XRAY = not WORLD_XRAY
         refreshWorldEsp()
     end
 end)
