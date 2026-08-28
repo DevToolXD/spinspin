@@ -1,11 +1,14 @@
 -- LocalScript in StarterPlayer > StarterPlayerScripts
 -- 플레이어 ESP + 맵 구조물 윤곽선
---   플레이어: 시야 트임 = 초록 / 벽 뒤 = 파랑 (Highlight, 항상 위에 표시)
+--   플레이어: 시야 트임 = 초록 / 벽 뒤 = 분홍 (Highlight, 항상 위에 표시)
 --   체력    : 캐릭터 왼쪽 세로 바
---   구조물  : 주변 파트에 SelectionBox 윤곽선 (풀링 재사용)
+--   구조물  : 충돌(CanCollide) 있는 파트만 초록 Highlight 윤곽선
 --
--- ※ Highlight 는 workspace 에 붙여도 아무 효과가 없다(Model/BasePart 만 가능,
---   게다가 클라이언트당 31개까지만 렌더링됨). 그래서 맵 구조물은 SelectionBox 로 그린다.
+-- ※ 구조물에 SelectionBox 를 쓰면 메시/유니온 같은 입체 모델도 네모 상자로만 그려져서
+--   모양이 안 맞는다. Highlight 는 실제 지오메트리를 따라 윤곽을 그리므로 그쪽으로 교체.
+-- ※ Highlight 는 클라이언트당 31개까지만 렌더링된다. 그래서 "가장 가까운 N개"만 그린다.
+-- ※ Highlight 는 선 두께 조절 속성이 없다. 더 굵어 보이게 하려면 FILL_TRANSPARENCY 를
+--   낮춰서 면을 살짝 채우면 된다(아래 설정).
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -17,7 +20,7 @@ local player = Players.LocalPlayer
 -- 설정
 ----------------------------------------------------------------
 local VISIBLE_COLOR  = Color3.fromRGB(0, 255, 0)
-local OCCLUDED_COLOR = Color3.fromRGB(255, 0, 200) -- 벽 뒤 플레이어(구조물 파랑과 구분되게 분홍)
+local OCCLUDED_COLOR = Color3.fromRGB(255, 0, 200) -- 벽 뒤 플레이어(분홍)
 
 local BAR_FULL_COLOR  = Color3.fromRGB(0, 255, 0)
 local BAR_EMPTY_COLOR = Color3.fromRGB(255, 0, 0)
@@ -25,80 +28,52 @@ local BAR_EMPTY_COLOR = Color3.fromRGB(255, 0, 0)
 local SHOW_ONLY_TEAMMATES = false          -- true 면 같은 팀(파티원)만 표시
 
 -- 구조물(월드) 윤곽선
-local WORLD_ESP_ENABLED    = true
-local WORLD_OUTLINE_COLOR  = Color3.fromRGB(0, 140, 255)  -- 구조물 윤곽선 색(파랑)
-local WORLD_LINE_TRANSPARENCY = 0          -- 0 = 완전 불투명(잘 보임), 1 = 안 보임
-local WORLD_LINE_THICKNESS = 0.12          -- 스터드 단위, 멀수록 얇아 보임
-local WORLD_RADIUS         = 150           -- 카메라 기준 이 반경 안의 구조물만
-local MAX_WORLD_BOXES      = 250           -- 동시에 그릴 최대 개수(성능)
-local WORLD_REFRESH_TIME   = 0.3           -- 초 단위 갱신 주기
-local MIN_PART_SIZE        = 1             -- 이보다 작은 자잘한 파트는 무시
-local MAX_PART_SIZE        = 400           -- 베이스플레이트 같은 초대형 파트는 무시
-local WORLD_TOGGLE_KEY     = Enum.KeyCode.H -- H 키로 구조물 윤곽선 on/off
-
--- 벽 관통(X-ray) 구조물 윤곽선
--- Highlight 는 클라이언트당 31개까지만 렌더링되므로 "가장 가까운 N개"에만 쓴다.
--- 나머지 구조물은 기존처럼 SelectionBox(벽에 가려짐)로 그린다.
-local WORLD_XRAY       = true
-local WORLD_XRAY_COUNT = 12                      -- 관통 표시할 가장 가까운 구조물 개수
-local WORLD_XRAY_COLOR = Color3.fromRGB(0, 170, 255)
-local WORLD_XRAY_TRANSPARENCY = 0.25             -- 0 = 진함
-local WORLD_XRAY_KEY   = Enum.KeyCode.J          -- J 키로 관통 표시 on/off
+local WORLD_ESP_ENABLED   = true
+local WORLD_COLOR         = Color3.fromRGB(0, 255, 0)  -- 초록
+local WORLD_OUTLINE_TRANSPARENCY = 0       -- 0 = 진하게
+local WORLD_FILL_TRANSPARENCY    = 0.82    -- 낮출수록 굵고 진해 보임 (1 = 윤곽선만)
+local WORLD_XRAY          = false          -- true = 벽 뒤 구조물까지 표시
+local WORLD_RADIUS        = 120            -- 카메라 기준 이 반경 안만
+local WORLD_MAX           = 24             -- 동시에 그릴 개수(Highlight 31개 제한 때문)
+local WORLD_REFRESH_TIME  = 0.25           -- 갱신 주기(초)
+local COLLIDABLE_ONLY     = true           -- 충돌 있는 파트만 윤곽선
+local MIN_PART_SIZE       = 1              -- 이보다 작은 자잘한 파트는 무시
+local MAX_PART_SIZE       = 400            -- 베이스플레이트 같은 초대형 파트는 무시
+local WORLD_TOGGLE_KEY    = Enum.KeyCode.H -- H = 구조물 윤곽선 on/off
+local WORLD_XRAY_KEY      = Enum.KeyCode.J -- J = 벽 관통 on/off
 
 ----------------------------------------------------------------
--- 구조물 윤곽선 (SelectionBox 풀)
+-- 구조물 윤곽선 (Highlight 풀)
 ----------------------------------------------------------------
 local worldFolder = workspace:FindFirstChild("WorldEspAdornments")
 if worldFolder then worldFolder:Destroy() end
 worldFolder = Instance.new("Folder")
 worldFolder.Name = "WorldEspAdornments"
-worldFolder.Parent = workspace -- LocalScript 가 만든 것이라 내 클라이언트에만 존재
+worldFolder.Parent = workspace -- LocalScript 생성물이라 내 클라이언트에만 존재
 
-local boxPool = {}
+local worldPool = {}
 
-local function getBox(i)
-    local box = boxPool[i]
-    if not box then
-        box = Instance.new("SelectionBox")
-        box.Name = "WorldEspBox"
-        box.Color3 = WORLD_OUTLINE_COLOR
-        box.LineThickness = WORLD_LINE_THICKNESS
-        box.Transparency = WORLD_LINE_TRANSPARENCY
-        box.SurfaceTransparency = 1 -- 면 채우기 없음, 윤곽선만
-        box.Parent = worldFolder
-        boxPool[i] = box
-    end
-    return box
-end
-
-local function hideBoxesFrom(startIndex)
-    for i = startIndex, #boxPool do
-        boxPool[i].Adornee = nil
-        boxPool[i].Visible = false
-    end
-end
-
-local highlightPool = {}
-
-local function getHighlight(i)
-    local hl = highlightPool[i]
+local function getWorldHighlight(i)
+    local hl = worldPool[i]
     if not hl then
         hl = Instance.new("Highlight")
-        hl.Name = "WorldEspXray"
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- 벽 뒤에서도 보임
-        hl.FillTransparency = 1                            -- 채우기 없음, 윤곽선만
-        hl.OutlineColor = WORLD_XRAY_COLOR
-        hl.OutlineTransparency = WORLD_XRAY_TRANSPARENCY
+        hl.Name = "WorldEspHighlight"
+        hl.FillColor = WORLD_COLOR
+        hl.OutlineColor = WORLD_COLOR
+        hl.FillTransparency = WORLD_FILL_TRANSPARENCY
+        hl.OutlineTransparency = WORLD_OUTLINE_TRANSPARENCY
         hl.Parent = worldFolder
-        highlightPool[i] = hl
+        worldPool[i] = hl
     end
+    hl.DepthMode = WORLD_XRAY and Enum.HighlightDepthMode.AlwaysOnTop
+        or Enum.HighlightDepthMode.Occluded
     return hl
 end
 
-local function hideHighlightsFrom(startIndex)
-    for i = startIndex, #highlightPool do
-        highlightPool[i].Adornee = nil
-        highlightPool[i].Enabled = false
+local function hideWorldFrom(startIndex)
+    for i = startIndex, #worldPool do
+        worldPool[i].Adornee = nil
+        worldPool[i].Enabled = false
     end
 end
 
@@ -107,7 +82,9 @@ overlapParams.FilterType = Enum.RaycastFilterType.Exclude
 overlapParams.MaxParts = 2000
 
 local function isStructure(part)
-    if part.Transparency >= 1 then return false end -- 안 보이는 파트 제외
+    if COLLIDABLE_ONLY and not part.CanCollide then
+        return false -- 충돌 없는 장식물은 제외
+    end
     local size = part.Size
     if size.X < MIN_PART_SIZE and size.Y < MIN_PART_SIZE and size.Z < MIN_PART_SIZE then
         return false
@@ -126,8 +103,7 @@ local candidates = {}
 
 local function refreshWorldEsp()
     if not WORLD_ESP_ENABLED then
-        hideBoxesFrom(1)
-        hideHighlightsFrom(1)
+        hideWorldFrom(1)
         return
     end
 
@@ -153,35 +129,22 @@ local function refreshWorldEsp()
         end
     end
 
-    -- 가까운 것부터 (앞쪽 N개는 벽 관통 표시에 쓴다)
+    -- 가까운 것부터 (Highlight 개수 제한 때문에 가까운 구조물 우선)
     table.sort(candidates, function(a, b)
         return (a.Position - origin).Magnitude < (b.Position - origin).Magnitude
     end)
 
-    -- 벽 관통 표시: Highlight 31개 제한을 플레이어 ESP 와 나눠 쓴다
-    local xrayCount = 0
-    if WORLD_XRAY then
-        local otherPlayers = math.max(#Players:GetPlayers() - 1, 0)
-        local budget = math.max(28 - otherPlayers, 0)
-        xrayCount = math.min(WORLD_XRAY_COUNT, budget, #candidates)
-    end
-    for i = 1, xrayCount do
-        local hl = getHighlight(i)
+    -- Highlight 31개 제한을 플레이어 ESP 와 나눠 쓴다
+    local otherPlayers = math.max(#Players:GetPlayers() - 1, 0)
+    local budget = math.max(29 - otherPlayers, 0)
+    local count = math.min(WORLD_MAX, budget, #candidates)
+
+    for i = 1, count do
+        local hl = getWorldHighlight(i)
         hl.Adornee = candidates[i]
         hl.Enabled = true
     end
-    hideHighlightsFrom(xrayCount + 1)
-
-    -- 나머지는 SelectionBox (중복으로 그리지 않게 xrayCount 다음부터)
-    local boxCount = 0
-    local last = math.min(#candidates, xrayCount + MAX_WORLD_BOXES)
-    for i = xrayCount + 1, last do
-        boxCount += 1
-        local box = getBox(boxCount)
-        box.Adornee = candidates[i]
-        box.Visible = true
-    end
-    hideBoxesFrom(boxCount + 1)
+    hideWorldFrom(count + 1)
 end
 
 ----------------------------------------------------------------
@@ -261,8 +224,7 @@ local function hookCharacter(targetPlayer, char)
     local hrp = char:WaitForChild("HumanoidRootPart", 5)
     if not hrp then return end
 
-    local connections = {}
-    local billboard
+    local connections, billboard = {}, nil
     if humanoid then
         local conn
         billboard, conn = createHealthBar(hrp, humanoid)
@@ -299,7 +261,7 @@ Players.PlayerAdded:Connect(onPlayerAdded)
 Players.PlayerRemoving:Connect(untrack)
 
 ----------------------------------------------------------------
--- 매 프레임: 시야 판정 -> 윤곽 색 전환
+-- 매 프레임: 시야 판정 -> 윤곽 색 전환 + 주기적 구조물 갱신
 ----------------------------------------------------------------
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -343,7 +305,7 @@ end)
 refreshWorldEsp()
 
 ----------------------------------------------------------------
--- H 키로 구조물 윤곽선 켜기/끄기
+-- 토글 키
 ----------------------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
@@ -352,6 +314,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         refreshWorldEsp()
     elseif input.KeyCode == WORLD_XRAY_KEY then
         WORLD_XRAY = not WORLD_XRAY
+        for _, hl in ipairs(worldPool) do
+            hl.DepthMode = WORLD_XRAY and Enum.HighlightDepthMode.AlwaysOnTop
+                or Enum.HighlightDepthMode.Occluded
+        end
         refreshWorldEsp()
     end
 end)
