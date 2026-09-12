@@ -1,0 +1,13 @@
+[project]
+name = "dsagent"
+version = "0.1.0"
+description = "A DeepSeek-driven coding agent harness"
+requires-python = ">=3.10"
+dependencies = ["httpx>=0.27"]
+
+[project.scripts]
+dsagent = "dsagent.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
