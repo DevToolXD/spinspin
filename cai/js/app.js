@@ -770,7 +770,12 @@
     if (tab) selectSettingsTab(tab);
     refreshWorkspacePanels();
   }
-  function closeSettings() { $('settingsModal').hidden = true; }
+  function closeSettings() {
+    $('settingsModal').hidden = true;
+    // 설정 안에서 키·모델이 바뀌었을 수 있으므로 상단바와 안내 배너를 맞춘다.
+    populateModels();
+    syncComposerNotice();
+  }
 
   function selectSettingsTab(tab) {
     Array.prototype.forEach.call(document.querySelectorAll('.modal-tab'), function (b) {

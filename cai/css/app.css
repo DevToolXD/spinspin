@@ -310,6 +310,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-top: 1px solid var(--line-soft);
   font-size: 0.78rem;
 }
+.sidebar-foot .link-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 4px 5px;
+}
 #whoami { color: var(--accent); font-weight: 700; }
 
 /* ─────────────────────────── 대화 영역 ─────────────────────────── */
