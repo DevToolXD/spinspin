@@ -142,7 +142,10 @@
       for (var i = 0; i < toolUses.length; i++) {
         var call = toolUses[i];
         emit({ type: 'tool_start', id: call.id, name: call.name, input: call.input });
-        var out = await CAI.tools.execute(call.name, call.input, { onArtifact: artifactSink });
+        var out = await CAI.tools.execute(call.name, call.input, {
+          onArtifact: artifactSink,
+          signal: o.signal,
+        });
         emit({
           type: 'tool_end',
           id: call.id,
@@ -175,5 +178,155 @@
     return session;
   }
 
-  CAI.agent = { run: run, windowMessages: windowMessages };
+  // ─────────────────────────────────────────── 팀(레드팀 조별과제) 러너
+  //
+  // 등록된 조원들이 순서대로 한 번씩 발언한다(라운드). 각 조원은 지금까지의
+  // 전체 대화(사용자 + 다른 조원의 발언)를 보고 이어서 반응한다. 도구는 쓰지
+  // 않고 토론·산출물 작성에 집중한다(멀티에이전트 + 도구루프는 과도하게 복잡).
+
+  function collectText(message) {
+    return (Array.isArray(message.content) ? message.content : [])
+      .filter(function (p) { return p.type === 'text'; })
+      .map(function (p) { return p.text; })
+      .join('\n')
+      .trim();
+  }
+
+  /** 특정 조원의 시점에서 대화 기록을 provider 메시지로 변환한다.
+   *  자기 발언 = assistant, 그 외(사용자·다른 조원) = user + "이름: " 접두. */
+  function teamViewMessages(messages, selfId) {
+    var out = [];
+    for (var i = 0; i < messages.length; i++) {
+      var m = messages[i];
+      var text = collectText(m);
+      if (!text) continue;
+      if (m.role === 'assistant' && m.agent && m.agent.id === selfId) {
+        out.push({ role: 'assistant', content: [textPart(text)] });
+      } else {
+        var speaker = m.role === 'assistant' && m.agent ? m.agent.name : '사용자';
+        out.push({ role: 'user', content: [textPart(speaker + ': ' + text)] });
+      }
+    }
+    // 연속된 user 메시지는 합쳐 준다(일부 provider 가 교대 역할을 선호).
+    var merged = [];
+    out.forEach(function (msg) {
+      var last = merged[merged.length - 1];
+      if (last && last.role === msg.role) {
+        last.content[0].text += '\n\n' + msg.content[0].text;
+      } else {
+        merged.push({ role: msg.role, content: [textPart(msg.content[0].text)] });
+      }
+    });
+    // 첫 메시지가 assistant 이면(첫 발언자) 앞에 맥락 한 줄을 넣어 user 로 시작하게 한다.
+    if (merged.length && merged[0].role === 'assistant') {
+      merged.unshift({ role: 'user', content: [textPart('(팀 토론을 이어가세요.)')] });
+    }
+    return merged;
+  }
+
+  /**
+   * @param o.session, o.settings, o.text
+   * @param o.onEvent(ev)  ev.member 로 현재 발언 조원을 전달
+   * @param o.signal
+   */
+  async function runTeam(o) {
+    var session = o.session;
+    var settings = o.settings;
+    var emit = o.onEvent || function () {};
+    var team = settings.team || {};
+    var members = (team.members || []).filter(function (m) {
+      return m && m.provider && m.model;
+    });
+
+    if (!members.length) {
+      throw new Error('팀에 조원이 없습니다. ⚙️ 설정 → 팀 에서 조원을 추가하세요.');
+    }
+
+    // 키 확인
+    for (var k = 0; k < members.length; k++) {
+      var mk = members[k].keyOverride || (settings.keys && settings.keys[members[k].provider]);
+      if (!mk) {
+        var pv = CAI.providers.all[members[k].provider];
+        throw new Error(
+          members[k].name + ' 조원의 ' + (pv ? pv.label : members[k].provider) +
+          ' API 키가 없습니다. ⚙️ 설정에서 키를 등록하세요.'
+        );
+      }
+    }
+
+    if (o.text) {
+      session.messages.push({ role: 'user', content: [textPart(o.text)] });
+      emit({ type: 'user_message', text: o.text });
+    }
+    session.isTeam = true;
+
+    var memories = [];
+    try { memories = await CAI.tools.loadMemory(); } catch (e) {}
+
+    var rounds = Math.max(1, Math.min(5, Number(o.rounds || team.rounds) || 1));
+    session.usage = session.usage || { input: 0, output: 0 };
+
+    for (var r = 0; r < rounds; r++) {
+      for (var i = 0; i < members.length; i++) {
+        if (o.signal && o.signal.aborted) throw new DOMException('중단됨', 'AbortError');
+        var member = members[i];
+        var provider = CAI.providers.get(member.provider);
+        var apiKey = member.keyOverride || settings.keys[member.provider];
+
+        var system = CAI.harness.build({
+          settings: settings,
+          roleOverride: member.role,
+          provider: member.provider,
+          model: member.model,
+          tools: [],
+          memories: memories,
+          team: { self: member, members: members, goal: team.goal },
+        });
+
+        emit({ type: 'member_start', member: member, round: r });
+
+        var buffered = '';
+        var streamOpts = {
+          apiKey: apiKey,
+          model: member.model,
+          system: system,
+          messages: windowMessages(teamViewMessages(session.messages, member.id), 80),
+          tools: [],
+          temperature: typeof settings.temperature === 'number' ? settings.temperature : undefined,
+          maxTokens: Number(settings.maxTokens) || 4096,
+          baseUrl: (settings.baseUrls && settings.baseUrls[member.provider]) || '',
+          signal: o.signal,
+        };
+
+        for await (var ev of provider.stream(streamOpts)) {
+          if (o.signal && o.signal.aborted) throw new DOMException('중단됨', 'AbortError');
+          if (ev.type === 'text') {
+            buffered += ev.delta;
+            emit({ type: 'text', delta: ev.delta, text: buffered, member: member });
+          } else if (ev.type === 'thinking') {
+            emit({ type: 'thinking', delta: ev.delta, member: member });
+          } else if (ev.type === 'usage') {
+            session.usage.input += ev.input || 0;
+            session.usage.output += ev.output || 0;
+            emit({ type: 'usage', total: session.usage });
+          }
+        }
+
+        session.messages.push({
+          role: 'assistant',
+          content: [textPart(buffered)],
+          agent: {
+            id: member.id, name: member.name, provider: member.provider,
+            model: member.model, color: member.color,
+          },
+        });
+        emit({ type: 'member_done', member: member, text: buffered });
+      }
+    }
+
+    emit({ type: 'done', reason: 'team_round' });
+    return session;
+  }
+
+  CAI.agent = { run: run, runTeam: runTeam, windowMessages: windowMessages, teamViewMessages: teamViewMessages };
 })(window);

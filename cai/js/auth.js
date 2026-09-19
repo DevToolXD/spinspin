@@ -22,7 +22,7 @@
       },
       baseUrls: { anthropic: '', openai: '', google: '' },
       modelCache: { anthropic: [], openai: [], google: [] },
-      harnessId: 'cai-default',
+      harnessId: 'cai-redteam',
       harnessCustom: '',
       userName: '',
       temperature: 1,
@@ -31,6 +31,13 @@
       streaming: true,
       toolsEnabled: true,
       disabledTools: [],
+      // 팀(레드팀 조별과제) 모드
+      team: {
+        mode: 'solo',   // 'solo' = 1:1, 'team' = 여러 조원이 함께 토론
+        goal: '',       // 공동 목표 / 챌린지 설명
+        rounds: 1,      // 한 번 보낼 때 각 조원이 발언하는 라운드 수
+        members: [],    // [{ id, name, provider, model, role, color, keyOverride }]
+      },
     };
   }
 

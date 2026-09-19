@@ -110,6 +110,9 @@
 
   async function enterApp() {
     state.settings = CAI.auth.settings();
+    // 예전 계정이 더 이상 없는 하네스 ID 를 갖고 있으면 기본값으로 되돌린다.
+    if (!CAI.harness.byId[state.settings.harnessId]) state.settings.harnessId = 'cai-redteam';
+    if (!state.settings.team) state.settings.team = { mode: 'solo', goal: '', rounds: 1, members: [] };
     $('authScreen').hidden = true;
     $('app').hidden = false;
     $('whoami').textContent = CAI.auth.username();
@@ -118,6 +121,7 @@
     populateHarnessSelect();
     populateModels();
     syncComposerNotice();
+    syncModeUI();
     buildSettingsUI();
 
     $('footState').textContent = IDLE_HINT;
@@ -431,6 +435,19 @@
         return;
       }
 
+      // 팀 조원의 발언은 각자 색깔 있는 말풍선으로 복원한다.
+      if (m.agent) {
+        closeTurn();
+        var mtext = parts.filter(function (p) { return p.type === 'text'; })
+          .map(function (p) { return p.text; }).join('\n');
+        var bubble = startMemberBubble({
+          name: m.agent.name, provider: m.agent.provider,
+          model: m.agent.model || '', color: m.agent.color,
+        });
+        bubble._content.innerHTML = md.render(mtext);
+        return;
+      }
+
       if (!turn) turn = startAssistant();
       if (m.thinking) {
         var think = thinkingBlock(turn);
@@ -448,15 +465,18 @@
     });
     closeTurn();
 
+    // 팀 세션이면 이어서 토론할 수 있는 버튼을 남긴다.
+    if (state.session && state.session.isTeam && isTeamMode()) teamContinueBar();
+
     updateUsage();
     scrollDown(true);
   }
 
   var STARTERS = [
-    { t: '하네스 점검', p: '지금 너에게 적용된 시스템 프롬프트의 규칙을 항목별로 요약하고, 사용할 수 있는 도구를 한 줄씩 설명해 줘.' },
-    { t: '계산 검증', p: '1부터 10000까지의 소수 개수를 run_javascript 로 실제 계산해서 알려 줘.' },
-    { t: '작업공간 쓰기', p: '오늘 할 일 목록 템플릿을 만들어 todo.md 로 저장하고, 저장된 내용을 다시 읽어서 보여 줘.' },
-    { t: '결과물 미리보기', p: '간단한 포모도로 타이머 웹페이지를 만들어 show_artifact 로 미리보기에 띄워 줘.' },
+    { t: '접근 방법 잡기', p: '내 CTF 챌린지야. nmap 결과를 붙여넣을 테니, 정찰 관점에서 뭘 먼저 파고들지 우선순위를 잡아 줘.' },
+    { t: '크립토 풀이', p: '이 문자열이 어떤 인코딩/암호인지 판별하고 run_javascript 로 디코딩해서 플래그를 찾아 줘: (여기에 붙여넣기)' },
+    { t: 'pwn 분석', p: 'checksec 출력과 디스어셈블을 붙여넣을게. 보호기법을 정리하고 어떤 익스플로잇 기법이 가능한지 짚어 줘.' },
+    { t: '팀으로 공략', p: '상단 👥 팀 모드로 바꾸고, 등록한 조원들과 이 웹 챌린지를 역할 나눠 함께 토론해 줘.' },
   ];
 
   function emptyState() {
@@ -499,11 +519,25 @@
     $('footState').textContent = on ? '응답 생성 중… (■ 를 누르면 중단)' : IDLE_HINT;
   }
 
+  function isTeamMode() {
+    var team = state.settings.team;
+    return !!(team && team.mode === 'team' && (team.members || []).length);
+  }
+
   async function send() {
     if (state.running) return;
     var box = $('input');
     var text = box.value.trim();
     if (!text) return;
+
+    if (isTeamMode()) {
+      box.value = '';
+      autoGrow();
+      var empty0 = $('messages').querySelector('.empty-state');
+      if (empty0) empty0.remove();
+      await runTeamTurn(text);
+      return;
+    }
 
     var providerId = state.settings.provider;
     if (!state.settings.keys[providerId]) {
@@ -623,6 +657,141 @@
       updateUsage();
       $('input').focus();
     }
+  }
+
+  // ───────────────────────────────────────── 팀(레드팀 조별과제) 턴
+
+  function startMemberBubble(member) {
+    var node = el('div', 'msg assistant member');
+    var avatar = el('div', 'msg-avatar', (member.name || '?').slice(0, 2));
+    avatar.style.background = member.color || '#5b9dff';
+    avatar.style.color = '#0f1226';
+    var body = el('div', 'msg-body');
+    var prov = CAI.providers.all[member.provider];
+    var role = el('div', 'msg-role');
+    role.innerHTML = '<b style="color:' + (member.color || '#5b9dff') + '">' + md.escapeHtml(member.name) +
+      '</b> · ' + md.escapeHtml((prov ? prov.short : member.provider) + ' · ' + member.model);
+    body.appendChild(role);
+    var content = el('div', 'msg-content');
+    body.appendChild(content);
+    node.appendChild(avatar);
+    node.appendChild(body);
+    node._content = content;
+    $('messages').appendChild(node);
+    scrollDown(true);
+    return node;
+  }
+
+  function teamContinueBar() {
+    var old = $('messages').querySelector('.team-continue');
+    if (old) old.remove();
+    var bar = el('div', 'team-continue');
+    var btn = el('button', 'btn', '🔁 한 라운드 더 토론');
+    btn.type = 'button';
+    btn.addEventListener('click', function () { bar.remove(); runTeamTurn(null); });
+    bar.appendChild(btn);
+    $('messages').appendChild(bar);
+    scrollDown(true);
+  }
+
+  async function runTeamTurn(text) {
+    setRunning(true);
+    state.abort = new AbortController();
+    var oldBar = $('messages').querySelector('.team-continue');
+    if (oldBar) oldBar.remove();
+
+    if (text) appendUser(text);
+
+    var current = null;      // 현재 발언 조원 DOM
+    var buffered = '';
+    var frame = null;
+    function paint() {
+      frame = null;
+      if (current) current._content.innerHTML = md.render(buffered) + '<span class="cursor-blink"></span>';
+      scrollDown(false);
+    }
+
+    function onEvent(ev) {
+      if (ev.type === 'member_start') {
+        buffered = '';
+        current = startMemberBubble(ev.member);
+      } else if (ev.type === 'text') {
+        buffered = ev.text;
+        if (!frame) frame = requestAnimationFrame(paint);
+      } else if (ev.type === 'member_done') {
+        if (frame) { cancelAnimationFrame(frame); frame = null; }
+        if (current) current._content.innerHTML = md.render(buffered);
+        current = null;
+      } else if (ev.type === 'usage') {
+        updateUsage();
+      }
+    }
+
+    try {
+      await CAI.agent.runTeam({
+        session: state.session,
+        settings: state.settings,
+        text: text || undefined,
+        onEvent: onEvent,
+        signal: state.abort.signal,
+      });
+      await CAI.sessions.save(state.session);
+      await refreshSessionList();
+      teamContinueBar();
+    } catch (err) {
+      if (frame) cancelAnimationFrame(frame);
+      if (current && buffered) current._content.innerHTML = md.render(buffered);
+      else if (current) current.remove();
+      if (err && err.name === 'AbortError') {
+        $('footState').textContent = '중단됨';
+        setTimeout(function () { if (!state.running) $('footState').textContent = IDLE_HINT; }, 2000);
+      } else {
+        appendError(errorText(err), null);
+      }
+      try { await CAI.sessions.save(state.session); } catch (e) {}
+    } finally {
+      state.abort = null;
+      setRunning(false);
+      updateUsage();
+      $('input').focus();
+    }
+  }
+
+  // 모드(1:1 / 팀) 토글 UI 동기화
+  function syncModeUI() {
+    var team = state.settings.team || {};
+    var isTeam = team.mode === 'team';
+    var toggle = $('modeToggle');
+    if (toggle) {
+      Array.prototype.forEach.call(toggle.querySelectorAll('[data-mode]'), function (b) {
+        b.classList.toggle('is-active', (b.dataset.mode === 'team') === isTeam);
+      });
+    }
+    var count = (team.members || []).length;
+    var badge = $('teamBadge');
+    if (badge) {
+      if (isTeam) { badge.textContent = '👥 팀 ' + count + '명'; badge.hidden = false; }
+      else badge.hidden = true;
+    }
+    var input = $('input');
+    if (input) {
+      input.placeholder = isTeam
+        ? (count ? '팀에게 과제를 던지세요 — 조원들이 함께 토론합니다' : '⚙️ 설정 → 팀 에서 조원을 먼저 추가하세요')
+        : '메시지를 입력하세요';
+    }
+  }
+
+  function setMode(mode) {
+    if (!state.settings.team) state.settings.team = { mode: 'solo', goal: '', rounds: 1, members: [] };
+    if (mode === 'team' && !(state.settings.team.members || []).length) {
+      toast('팀에 조원이 없습니다. 설정에서 추가하거나 자동 구성하세요.');
+      openSettings('team');
+      state.settings.team.mode = 'team';
+    } else {
+      state.settings.team.mode = mode;
+    }
+    saveSettingsSoon();
+    syncModeUI();
   }
 
   // ───────────────────────────────────────── 세션
@@ -906,6 +1075,147 @@
       label.appendChild(textWrap);
       list.appendChild(label);
     });
+
+    // --- 팀 ---
+    var team = state.settings.team || (state.settings.team = { mode: 'solo', goal: '', rounds: 1, members: [] });
+    $('teamGoal').value = team.goal || '';
+    $('teamRounds').value = team.rounds || 1;
+    renderTeamRoster();
+  }
+
+  // ───────────────────────────────────────── 팀 로스터 설정
+
+  var MEMBER_COLORS = ['#5b9dff', '#4dd0a7', '#ff9f6b', '#c98bff', '#ffd24c', '#ff7fb6', '#6be8ff', '#ff6b6b'];
+
+  function teamMembers() {
+    var team = state.settings.team || (state.settings.team = { mode: 'solo', goal: '', rounds: 1, members: [] });
+    if (!Array.isArray(team.members)) team.members = [];
+    return team.members;
+  }
+
+  function providerModelOptions(providerId) {
+    return modelOptionsFor(providerId);
+  }
+
+  function renderTeamRoster() {
+    var box = $('teamRoster');
+    box.innerHTML = '';
+    var members = teamMembers();
+
+    if (!members.length) {
+      box.appendChild(el('div', 'fs-empty', '조원이 없습니다. 아래에서 추가하거나 “등록된 키로 자동 구성”을 누르세요.'));
+    }
+
+    members.forEach(function (m, idx) {
+      var row = el('div', 'member-row');
+      var dot = el('span', 'member-dot');
+      dot.style.background = m.color || MEMBER_COLORS[idx % MEMBER_COLORS.length];
+      row.appendChild(dot);
+
+      var name = document.createElement('input');
+      name.className = 'member-name';
+      name.value = m.name || '';
+      name.placeholder = '이름';
+      name.addEventListener('input', function () { m.name = name.value; saveSettingsSoon(); });
+      row.appendChild(name);
+
+      var prov = document.createElement('select');
+      prov.className = 'member-select';
+      CAI.providers.list().forEach(function (p) {
+        var o = el('option', null, p.short); o.value = p.id; prov.appendChild(o);
+      });
+      prov.value = m.provider;
+      row.appendChild(prov);
+
+      var model = document.createElement('select');
+      model.className = 'member-select member-model';
+      function fillModels() {
+        model.innerHTML = '';
+        providerModelOptions(m.provider).forEach(function (mm) {
+          var o = el('option', null, mm.label || mm.id); o.value = mm.id; model.appendChild(o);
+        });
+        if (m.model && !Array.prototype.some.call(model.options, function (o) { return o.value === m.model; })) {
+          var o = el('option', null, m.model + ' (직접)'); o.value = m.model; model.appendChild(o);
+        }
+        model.value = m.model || (model.options[0] && model.options[0].value) || '';
+        m.model = model.value;
+      }
+      fillModels();
+      row.appendChild(model);
+
+      prov.addEventListener('change', function () {
+        m.provider = prov.value;
+        m.model = (providerModelOptions(m.provider)[0] || {}).id || '';
+        fillModels();
+        saveSettingsSoon();
+      });
+      model.addEventListener('change', function () { m.model = model.value; saveSettingsSoon(); });
+
+      var role = document.createElement('select');
+      role.className = 'member-select member-role';
+      CAI.harness.presets.forEach(function (p) {
+        if (p.id === 'plain' || p.id === 'custom') return;
+        var o = el('option', null, p.label); o.value = p.id; role.appendChild(o);
+      });
+      role.value = m.role || 'cai-redteam';
+      role.addEventListener('change', function () { m.role = role.value; saveSettingsSoon(); });
+      row.appendChild(role);
+
+      var del = el('button', 'icon-btn member-del', '✕');
+      del.type = 'button';
+      del.title = '조원 삭제';
+      del.addEventListener('click', function () {
+        members.splice(idx, 1);
+        saveSettingsSoon();
+        renderTeamRoster();
+      });
+      row.appendChild(del);
+
+      box.appendChild(row);
+    });
+  }
+
+  function addMember(seed) {
+    var members = teamMembers();
+    var provider = (seed && seed.provider) || state.settings.provider;
+    var color = MEMBER_COLORS[members.length % MEMBER_COLORS.length];
+    var prov = CAI.providers.all[provider];
+    members.push({
+      id: 'mem_' + CAI.crypto.randomId(6),
+      name: (seed && seed.name) || (prov ? prov.short : provider) + ' ' + (members.length + 1),
+      provider: provider,
+      model: (seed && seed.model) || (modelOptionsFor(provider)[0] || {}).id || '',
+      role: (seed && seed.role) || 'cai-redteam',
+      color: color,
+      keyOverride: '',
+    });
+    saveSettingsSoon();
+    renderTeamRoster();
+  }
+
+  // 등록된 키가 있는 제공자로 레드팀 역할을 나눠 자동 구성
+  function autoBuildTeam() {
+    var members = teamMembers();
+    var roles = ['cai-web', 'cai-pwn', 'cai-crypto', 'cai-redteam'];
+    var added = 0;
+    CAI.providers.list().forEach(function (p) {
+      if (!state.settings.keys[p.id]) return;
+      var role = roles[members.length % roles.length];
+      members.push({
+        id: 'mem_' + CAI.crypto.randomId(6),
+        name: p.short + ' · ' + CAI.harness.roleLabel(role),
+        provider: p.id,
+        model: state.settings.models[p.id] || (modelOptionsFor(p.id)[0] || {}).id || '',
+        role: role,
+        color: MEMBER_COLORS[members.length % MEMBER_COLORS.length],
+        keyOverride: '',
+      });
+      added++;
+    });
+    if (!added) { toast('먼저 API 키를 하나 이상 등록하세요.', true); return; }
+    saveSettingsSoon();
+    renderTeamRoster();
+    toast(added + '개 제공자로 팀을 구성했습니다.');
   }
 
   function syncHarnessPanel() {
@@ -1064,6 +1374,9 @@
     });
 
     $('newChatBtn').addEventListener('click', function () { newSession(); closeDrawer(); $('input').focus(); });
+    Array.prototype.forEach.call(document.querySelectorAll('#modeToggle [data-mode]'), function (b) {
+      b.addEventListener('click', function () { setMode(b.dataset.mode); });
+    });
     $('sessionSearch').addEventListener('input', renderSessionList);
     $('logoutBtn').addEventListener('click', leaveApp);
     $('exportBtn').addEventListener('click', doExport);
@@ -1150,6 +1463,20 @@
       state.settings.toolsEnabled = e.target.checked;
       saveSettingsSoon();
     });
+
+    // --- 팀 ---
+    $('teamGoal').addEventListener('input', function (e) {
+      state.settings.team.goal = e.target.value;
+      saveSettingsSoon();
+    });
+    $('teamRounds').addEventListener('change', function (e) {
+      state.settings.team.rounds = Math.min(5, Math.max(1, Number(e.target.value) || 1));
+      e.target.value = state.settings.team.rounds;
+      saveSettingsSoon();
+    });
+    $('addMemberBtn').addEventListener('click', function () { addMember(); });
+    $('autoTeamBtn').addEventListener('click', autoBuildTeam);
+
     $('memClearBtn').addEventListener('click', async function () {
       if (!confirm('장기 기억을 모두 삭제할까요?')) return;
       await CAI.tools.saveMemory([]);
